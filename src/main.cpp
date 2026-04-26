@@ -1,92 +1,115 @@
 #include <SDL3/SDL.h>
 #include <iostream>
+#include <fstream>
+#include <array>
 #include "ComplexNumber.cpp"
 
-void setColor(SDL_Renderer* renderer, int iteration);
+using namespace std;
+
+void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+array<uint8_t, 4> calcPixelColor(int iteration);
+void setRendererColor(SDL_Renderer* renderer, int iteration);
+ofstream createPPM(int width, int height, string name);
+void writeColorToPPM(SDL_Renderer* renderer, int iteration, int pixel, ofstream &image);
+
+const int maxIterations = 1000;
+double mandelRangeX = 2.47;
+double mandelRangeY = 2.24;
+double mandelOffsetX = -2.0;
+double mandelOffsetY = -1.12;
+double zoomfactor = 1.0;
+
+int width;
+int height;
+bool isPPMDisabled = false;
+bool isSDLDisabled = false;
 
 int main(int argc, char *argv[]) {
-    int width;
-    int height;
-    
     try
     {
-        if (argc < 3)
-        {
-            width = std::stoi(argv[1]);
-            height = std::stoi(argv[1]);
-        } else {
-            width = std::stoi(argv[1]);
-            height = std::stoi(argv[2]);
+        width = stoi(argv[1]);
+        height = stoi(argv[1]);
+        if (argc >= 3) height = stoi(argv[2]);
+        if (argc >= 4) {
+            for (size_t i = 2; i < argc; i++)
+            {
+                if (string(argv[i]) == "noppm") {
+                    isPPMDisabled = true;
+                } else if (string(argv[i]) == "nosdl") {
+                    isSDLDisabled = true;
+                }
+            }
         }
     }
-    catch(const std::exception& e)
+    catch(const exception& e)
     {
-        std::cerr << e.what() << '\n';
-        std::cout << "Using default values (300x300).\n";
+        cerr << e.what() << '\n';
+        cout << "Using default values (300x300).\n";
         width = 300;
         height = 300;
     }
-    
+    mandelRangeX *= zoomfactor;
+    mandelRangeY *= zoomfactor;
+    mandelOffsetX *= zoomfactor;
+    mandelOffsetY *= zoomfactor;
 
-
+    //init
     int pixelAmount = width * height;
+    if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
     
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::cerr << "SDL_Init fehlgeschlagen!" << std::endl;
-        return 1;
-    }
-
     SDL_Window* window = SDL_CreateWindow("SDL3 Window", width, height, 0);
-    if (!window) {
-        std::cerr << "Window-Erstellung fehlgeschlagen!" << std::endl;
-        return 1;
-    }
+    if (!window) return -1;
 
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (!renderer) {
-        std::cerr << "Renderer-Erstellung fehlgeschlagen!" << std::endl;
-        return 1;
-    }
+    if (!renderer) return -1;
 
-    bool running = true;
-    SDL_Event event;
+    if (isSDLDisabled) SDL_Quit();
+    
+    ofstream image;
+    if (!isPPMDisabled) image = createPPM(width, height, "mandelPic.ppm");
 
-    std::cout << "Starting Mandelbrot...\n";
-
-    // Hintergrund schwarz
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
+    cout << "Setup done! Starting Mandelbrot...\n";
 
-    //mandelbrot: z_n = (z_n-1)^2 + C
-    int maxIteration = 1000;
+
+    /*
+    Calculate Mandelbrot Set
+
+    mapping x and y value of img to lie on mandelbrot x scale (typical mandelbrot scale: x: -2.0 to 0.47; y: -1.12 to 1.12), 
+    by multiplying the relative position of img x and y with the the range we want to look at and adding back on
+    mandelbrot formular: z_n = (z_n-1)^2 + C
+    colors are applied based on how fast/slow this sequence grows
+    */
     for (size_t i = 0; i < pixelAmount; i++)
     {
         int x = i % width;
         int y = i / width;
-        double mX = (((double)x / (double)width) * 2.47) - 2; //mapping x value to lie on mandelbrot x scale (ca. -2.0 to 0.47)
-        double mY = (((double)y / (double)height) * 2.24) - 1.12; //same with y axis (ca. -1.12 to 1.12)
+        double mX = ((double)x / (width - 1)) * (mandelRangeX) + mandelOffsetX; 
+        double mY = ((double)y / (height - 1)) * (mandelRangeY) + mandelOffsetY; 
 
         ComplexNumber c = ComplexNumber(mX, mY);
         ComplexNumber z = ComplexNumber(0, 0);
 
         int iteration = 0;
-        while (z.absoluteValueSquared() <= 4 && iteration < maxIteration)
+        while (z.absoluteValueSquared() <= 4 && iteration < maxIterations)
         {
             z = (z * z) + c;
             iteration++;            
         }
-        setColor(renderer, iteration);
-        SDL_RenderPoint(renderer, x, y);
+        if (!isPPMDisabled) writeColorToPPM(renderer, iteration, i, image);
+        if (!isSDLDisabled) {
+            setRendererColor(renderer, iteration);
+            SDL_RenderPoint(renderer, x, y);
+        }
     }
     
-    std::cout << "Finished painting " << pixelAmount << " pixels!\n";
-    std::cout << "Rendering...\n";
-
-
+    cout << "Finished painting " << pixelAmount << " pixels!\n";
     SDL_RenderPresent(renderer);    
 
-    //key events
-    while (running) {
+    bool running = true;
+    SDL_Event event;
+    while (running && !isSDLDisabled) {
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
@@ -108,45 +131,70 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void setColor(SDL_Renderer* renderer, int iteration) {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+ofstream createPPM(int width, int height, string name) {
+    ofstream image("mandelPic.ppm");
+    image << "P3\n" << width << " " << height << "\n" << "255\n";
+    return image;
+}
 
-    int mappedIteration = iteration / 100; //adjust!!!
+void writeColorToPPM(SDL_Renderer* renderer, int iteration, int pixel, ofstream &image) {
+    if (!image) return;
+    array<uint8_t, 4> color = calcPixelColor(iteration);
+    image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
+}
 
+void setRendererColor(SDL_Renderer* renderer, int iteration) {
+    array<uint8_t, 4> color = calcPixelColor(iteration);
+    SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
+}
+
+array<uint8_t, 4> calcPixelColor(int iteration) {
+    array<uint8_t, 4> color = {0, 0, 0, 255};
+
+    int gradientSteps = 10;
+    int mappedIteration = (int)(((double)iteration / maxIterations) * (gradientSteps - 1));
+    
     switch (mappedIteration)
     {
+    case 0:
+        setColorValues(color, 103, 1, 241, 255);
+        return color;
     case 1:
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        break;
+        setColorValues(color, 185, 48, 111, 255);
+        return color;
     case 2:
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-        break;
+        setColorValues(color, 251, 105, 6, 255);
+        return color;
     case 3:
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-        break;
+        setColorValues(color, 254, 199, 2, 255);
+        return color;
     case 4:
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-        break;
+        setColorValues(color, 198, 255, 0, 255);
+        return color;
     case 5:
-        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
-        break;
+        setColorValues(color, 57, 255, 0, 255);
+        return color;
     case 6:
-        SDL_SetRenderDrawColor(renderer, 255, 0, 255, 255);
-        break;
+        setColorValues(color, 77, 195, 20, 255);
+        return color;
     case 7:
-        SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
-        break;
+        setColorValues(color, 205, 96, 53, 255);
+        return color;
     case 8:
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        break;
+        setColorValues(color, 128, 42, 33, 255);
+        return color;
     case 9:
-        SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
-        break;
-    case 10:
-        SDL_SetRenderDrawColor(renderer, 128, 0, 0, 255);
-        break;
+        setColorValues(color, 0, 0, 0, 255);
+        return color;
     default:
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        break;
+        setColorValues(color, 0, 0, 0, 255);
+        return color;
     }
+}
+
+void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    c[0] = r;
+    c[1] = g;
+    c[2] = b;
+    c[3] = a;
 }
