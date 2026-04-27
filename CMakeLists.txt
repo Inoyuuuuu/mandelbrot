@@ -3,7 +3,7 @@ project(mandelbrot)
 
 set(CMAKE_CXX_STANDARD 23)
 
-find_package(SDL3 REQUIRED)
+add_subdirectory(external/SDL)
 
 add_executable(mandelbrot src/main.cpp)
-target_link_libraries(mandelbrot SDL3::SDL3)
+target_link_libraries(mandelbrot PRIVATE SDL3::SDL3)
