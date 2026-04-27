@@ -15,6 +15,17 @@
             "cppStandard": "c++26",
             "intelliSenseMode": "windows-clang-x86",
             "compilerPath": "C:/msys64/ucrt64/bin/gcc.exe"
+        },
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c23",
+            "cppStandard": "gnu++26",
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4
