@@ -6,23 +6,27 @@
 
 using namespace std;
 
+void writeColorToPPM(SDL_Renderer* renderer, int iteration, int pixel, ofstream &image);
 void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-array<uint8_t, 4> calcPixelColor(int iteration);
+void renderMandelbrot(int pixelAmount, SDL_Renderer *renderer, ofstream &image);
 void setRendererColor(SDL_Renderer* renderer, int iteration);
 ofstream createPPM(int width, int height, string name);
-void writeColorToPPM(SDL_Renderer* renderer, int iteration, int pixel, ofstream &image);
+array<uint8_t, 4> calcPixelColor(int iteration);
 
+//mandelbrot
 const int maxIterations = 1000;
-double mandelRangeX = 2.47;
-double mandelRangeY = 2.24;
-double mandelOffsetX = -2.0;
-double mandelOffsetY = -1.12;
+double baseZoom = 100;
 double zoomfactor = 1.0;
+double xOffset = -0.42;
+double yOffset = 0;
 
+//window and program
 int width;
 int height;
 bool isPPMDisabled = false;
 bool isSDLDisabled = false;
+
+bool isCalculatingNextFrame = false;
 
 int main(int argc, char *argv[]) {
     try
@@ -48,13 +52,8 @@ int main(int argc, char *argv[]) {
         width = 300;
         height = 300;
     }
-    mandelRangeX *= zoomfactor;
-    mandelRangeY *= zoomfactor;
-    mandelOffsetX *= zoomfactor;
-    mandelOffsetY *= zoomfactor;
 
     //init
-    int pixelAmount = width * height;
     if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
     
     SDL_Window* window = SDL_CreateWindow("SDL3 Window", width, height, 0);
@@ -72,39 +71,9 @@ int main(int argc, char *argv[]) {
     SDL_RenderClear(renderer);
     cout << "Setup done! Starting Mandelbrot...\n";
 
-
-    /*
-    Calculate Mandelbrot Set
-
-    mapping x and y value of img to lie on mandelbrot x scale (typical mandelbrot scale: x: -2.0 to 0.47; y: -1.12 to 1.12), 
-    by multiplying the relative position of img x and y with the the range we want to look at and adding back on
-    mandelbrot formular: z_n = (z_n-1)^2 + C
-    colors are applied based on how fast/slow this sequence grows
-    */
-    for (size_t i = 0; i < pixelAmount; i++)
-    {
-        int x = i % width;
-        int y = i / width;
-        double mX = ((double)x / (width - 1)) * (mandelRangeX) + mandelOffsetX; 
-        double mY = ((double)y / (height - 1)) * (mandelRangeY) + mandelOffsetY; 
-
-        ComplexNumber c = ComplexNumber(mX, mY);
-        ComplexNumber z = ComplexNumber(0, 0);
-
-        int iteration = 0;
-        while (z.absoluteValueSquared() <= 4 && iteration < maxIterations)
-        {
-            z = (z * z) + c;
-            iteration++;            
-        }
-        if (!isPPMDisabled) writeColorToPPM(renderer, iteration, i, image);
-        if (!isSDLDisabled) {
-            setRendererColor(renderer, iteration);
-            SDL_RenderPoint(renderer, x, y);
-        }
-    }
+    renderMandelbrot(width * height, renderer, image);
     
-    cout << "Finished painting " << pixelAmount << " pixels!\n";
+    cout << "Finished painting " << width * height << " pixels!\n";
     SDL_RenderPresent(renderer);    
 
     bool running = true;
@@ -121,6 +90,43 @@ int main(int argc, char *argv[]) {
                     running = false;
                 }
             }
+
+            if (event.type == SDL_EVENT_MOUSE_WHEEL && !isCalculatingNextFrame) {
+                if (event.wheel.y > 0)
+                {
+                    zoomfactor *= 2;
+
+                    float x, y;
+                    Uint32 buttons = SDL_GetMouseState(&x, &y);
+                    x = x - width / 2;
+                    y = -(y - height / 2);
+                    x = x / (baseZoom * zoomfactor);
+                    y = y / (baseZoom * zoomfactor);
+
+                    xOffset += x;
+                    yOffset += y;
+                } else {
+                    zoomfactor /= 2;
+
+                    float x, y;
+                    Uint32 buttons = SDL_GetMouseState(&x, &y);
+                    x = x - width / 2;
+                    y = -(y - height / 2);
+                    x = x / (baseZoom * zoomfactor);
+                    y = y / (baseZoom * zoomfactor);
+
+                    xOffset -= x;
+                    yOffset -= y;
+                }
+
+                cout << "zoom: " << zoomfactor << "\n";
+
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
+
+                renderMandelbrot(width * height, renderer, image);
+                SDL_RenderPresent(renderer);
+            }
         }
     }
 
@@ -129,6 +135,45 @@ int main(int argc, char *argv[]) {
     SDL_Quit();
 
     return 0;
+}
+
+/*
+Calculate Mandelbrot Set
+
+mapping x and y value of img to lie on mandelbrot x scale (typical mandelbrot scale: x: -2.0 to 0.47; y: -1.12 to 1.12), 
+by multiplying the relative position of img x and y with the the range we want to look at and adding back on
+mandelbrot formular: z_n = (z_n-1)^2 + C
+colors are applied based on how fast/slow this sequence grows
+*/
+void renderMandelbrot(int pixelAmount, SDL_Renderer *renderer, ofstream &image) {
+    isCalculatingNextFrame = true;
+    for (size_t i = 0; i < pixelAmount; i++)
+    {
+        int x = i % width;        
+        int y = i / width;
+
+        double cartesianX = x - (width / 2);
+        double cartesianY = -(y - (height / 2));
+
+        double mX = cartesianX / (baseZoom * zoomfactor) + xOffset;
+        double mY = cartesianY / (baseZoom * zoomfactor) + yOffset;
+
+        ComplexNumber c = ComplexNumber(mX, mY);
+        ComplexNumber z = ComplexNumber(0, 0);
+
+        int iteration = 0;
+        while (z.absoluteValueSquared() <= 4 && iteration < maxIterations)
+        {
+            z = (z * z) + c;
+            iteration++;            
+        }
+        if (!isPPMDisabled) writeColorToPPM(renderer, iteration, i, image);
+        if (!isSDLDisabled) {
+            setRendererColor(renderer, iteration);
+            SDL_RenderPoint(renderer, x, y);
+        }
+    }
+    isCalculatingNextFrame = false;
 }
 
 ofstream createPPM(int width, int height, string name) {
