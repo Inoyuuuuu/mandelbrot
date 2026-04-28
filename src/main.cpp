@@ -2,15 +2,16 @@
 #include <iostream>
 #include <fstream>
 #include <array>
+#include <filesystem>
 #include "ComplexNumber.cpp"
 
 using namespace std;
 
-void writeColorToPPM(SDL_Renderer* renderer, int iteration, int pixel, ofstream &image);
 void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-void renderMandelbrot(int pixelAmount, SDL_Renderer *renderer, ofstream &image);
-void setRendererColor(SDL_Renderer* renderer, int iteration);
-ofstream createPPM(int width, int height, string name);
+void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount, int* colorInfo);
+void drawToPPMImage(int pixelAmount, int* colorInfo);
+void renderMandelbrot(int pixelAmount, int* colorInfo);
+ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
 
 //mandelbrot
@@ -23,10 +24,9 @@ double yOffset = 0;
 //window and program
 int width;
 int height;
-bool isPPMDisabled = false;
-bool isSDLDisabled = false;
-
-bool isCalculatingNextFrame = false;
+bool isBusy = false;
+int* colorInfo;
+size_t pixelAmount;
 
 int main(int argc, char *argv[]) {
     try
@@ -34,16 +34,6 @@ int main(int argc, char *argv[]) {
         width = stoi(argv[1]);
         height = stoi(argv[1]);
         if (argc >= 3) height = stoi(argv[2]);
-        if (argc >= 4) {
-            for (size_t i = 2; i < argc; i++)
-            {
-                if (string(argv[i]) == "noppm") {
-                    isPPMDisabled = true;
-                } else if (string(argv[i]) == "nosdl") {
-                    isSDLDisabled = true;
-                }
-            }
-        }
     }
     catch(const exception& e)
     {
@@ -55,30 +45,28 @@ int main(int argc, char *argv[]) {
 
     //init
     if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
-    
     SDL_Window* window = SDL_CreateWindow("SDL3 Window", width, height, 0);
     if (!window) return -1;
-
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer) return -1;
 
-    if (isSDLDisabled) SDL_Quit();
-    
-    ofstream image;
-    if (!isPPMDisabled) image = createPPM(width, height, "mandelPic.ppm");
-
+    pixelAmount = width * height;
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     cout << "Setup done! Starting Mandelbrot...\n";
 
-    renderMandelbrot(width * height, renderer, image);
-    
-    cout << "Finished painting " << width * height << " pixels!\n";
+    colorInfo = new int[pixelAmount * 4];
+    renderMandelbrot(pixelAmount, colorInfo);
+    cout << "Mandelbrot done! Starting Render/PPM\n";
+
+    drawToSDLWindow(renderer, pixelAmount, colorInfo);
+
+    cout << "Finished painting " << pixelAmount << " pixels!\n";
     SDL_RenderPresent(renderer);    
 
     bool running = true;
     SDL_Event event;
-    while (running && !isSDLDisabled) {
+    while (running) {
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
@@ -88,33 +76,33 @@ int main(int argc, char *argv[]) {
             if (event.type == SDL_EVENT_KEY_DOWN) {
                 if (event.key.key == SDLK_ESCAPE) {
                     running = false;
+                } else if(event.key.key == SDLK_P && !isBusy) {
+                    drawToPPMImage(pixelAmount, colorInfo);
                 }
             }
 
-            if (event.type == SDL_EVENT_MOUSE_WHEEL && !isCalculatingNextFrame) {
+            if (event.type == SDL_EVENT_MOUSE_WHEEL && !isBusy) {
+                float x, y;
+                Uint32 buttons = SDL_GetMouseState(&x, &y);
+                
                 if (event.wheel.y > 0)
                 {
-                    zoomfactor *= 2;
-
-                    float x, y;
-                    Uint32 buttons = SDL_GetMouseState(&x, &y);
                     x = x - width / 2;
                     y = -(y - height / 2);
-                    x = x / (baseZoom * zoomfactor);
-                    y = y / (baseZoom * zoomfactor);
+                    zoomfactor *= 2;
+                } else {
+                    x = -(x - width / 2);
+                    y = y - height / 2;
+                    zoomfactor /= 2;
+                }
+                x /= (baseZoom * zoomfactor);
+                y /= (baseZoom * zoomfactor);
 
+                if (event.wheel.y > 0)
+                {
                     xOffset += x;
                     yOffset += y;
                 } else {
-                    zoomfactor /= 2;
-
-                    float x, y;
-                    Uint32 buttons = SDL_GetMouseState(&x, &y);
-                    x = x - width / 2;
-                    y = -(y - height / 2);
-                    x = x / (baseZoom * zoomfactor);
-                    y = y / (baseZoom * zoomfactor);
-
                     xOffset -= x;
                     yOffset -= y;
                 }
@@ -124,7 +112,8 @@ int main(int argc, char *argv[]) {
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 SDL_RenderClear(renderer);
 
-                renderMandelbrot(width * height, renderer, image);
+                renderMandelbrot(pixelAmount, colorInfo);
+                drawToSDLWindow(renderer, pixelAmount, colorInfo);
                 SDL_RenderPresent(renderer);
             }
         }
@@ -145,8 +134,8 @@ by multiplying the relative position of img x and y with the the range we want t
 mandelbrot formular: z_n = (z_n-1)^2 + C
 colors are applied based on how fast/slow this sequence grows
 */
-void renderMandelbrot(int pixelAmount, SDL_Renderer *renderer, ofstream &image) {
-    isCalculatingNextFrame = true;
+void renderMandelbrot(int pixelAmount, int* colorInfo) {
+    isBusy = true;
     for (size_t i = 0; i < pixelAmount; i++)
     {
         int x = i % width;        
@@ -167,30 +156,51 @@ void renderMandelbrot(int pixelAmount, SDL_Renderer *renderer, ofstream &image) 
             z = (z * z) + c;
             iteration++;            
         }
-        if (!isPPMDisabled) writeColorToPPM(renderer, iteration, i, image);
-        if (!isSDLDisabled) {
-            setRendererColor(renderer, iteration);
-            SDL_RenderPoint(renderer, x, y);
+        
+        array<uint8_t, 4U> color = calcPixelColor(iteration);
+        for (size_t k = 0; k < 4; k++)
+        {
+            colorInfo[i*4 + k] = color[k];
         }
     }
-    isCalculatingNextFrame = false;
+    isBusy = false;
 }
 
-ofstream createPPM(int width, int height, string name) {
-    ofstream image("mandelPic.ppm");
+void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount, int* colorInfo) {
+    isBusy = true;
+    for (size_t i = 0; i < pixelAmount; i++)
+    {
+        SDL_SetRenderDrawColor(renderer, colorInfo[i*4], colorInfo[i*4+1], colorInfo[i*4+2], colorInfo[i*4+3]);
+        int x = i % width;        
+        int y = i / width;
+        SDL_RenderPoint(renderer, x, y);
+    }
+    isBusy = false;
+}
+
+void drawToPPMImage(int pixelAmount, int* colorInfo) {
+    isBusy = true;
+
+    ofstream image = createPPM(width, height);
+
+    for (size_t i = 0; i < pixelAmount; i++)
+    {
+        image << (int)colorInfo[i*4] << " " << (int)colorInfo[i*4+1] << " " << (int)colorInfo[i*4+2] << "\n";
+    }
+    isBusy = false;
+
+}
+
+ofstream createPPM(int width, int height) {
+    string path = "renders/mandelPic.ppm";
+    int counter = 2;
+    while (filesystem::exists(path)) {
+        path = "renders/mandelPic" + to_string(counter) + ".ppm";
+        counter++;
+    }
+    ofstream image(path);
     image << "P3\n" << width << " " << height << "\n" << "255\n";
     return image;
-}
-
-void writeColorToPPM(SDL_Renderer* renderer, int iteration, int pixel, ofstream &image) {
-    if (!image) return;
-    array<uint8_t, 4> color = calcPixelColor(iteration);
-    image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
-}
-
-void setRendererColor(SDL_Renderer* renderer, int iteration) {
-    array<uint8_t, 4> color = calcPixelColor(iteration);
-    SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
 }
 
 array<uint8_t, 4> calcPixelColor(int iteration) {
