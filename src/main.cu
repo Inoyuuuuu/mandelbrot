@@ -8,9 +8,10 @@
 using namespace std;
 
 void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount, int* colorInfo);
-void drawToPPMImage(int pixelAmount, int* colorInfo);
-void renderMandelbrot(int pixelAmount, int* colorInfo);
+void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
+void drawToPPMImage(int pixelAmount);
+__global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height,
+     double baseZoom, double zoomfactor, double xOffset, double yOffset);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
 
@@ -25,8 +26,12 @@ double yOffset = 0;
 int width;
 int height;
 bool isBusy = false;
-int* colorInfo;
+int* iterationInfo;
 size_t pixelAmount;
+
+//cuda
+dim3 threads_per_block(32, 32);
+dim3 blocks(1, 1);
 
 int main(int argc, char *argv[]) {
     try
@@ -55,11 +60,16 @@ int main(int argc, char *argv[]) {
     SDL_RenderClear(renderer);
     cout << "Setup done! Starting Mandelbrot...\n";
 
-    colorInfo = new int[pixelAmount * 4];
-    renderMandelbrot(pixelAmount, colorInfo);
-    cout << "Mandelbrot done! Starting Render/PPM\n";
+    cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
+    dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
+    blocks = tmp_blocks;
+    cout << "launching with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads!\n";
+    renderMandelbrot<<<blocks, threads_per_block>>>(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
+    cudaDeviceSynchronize();
 
-    drawToSDLWindow(renderer, pixelAmount, colorInfo);
+    cout << "Mandelbrot done! Starting Render\n";
+
+    drawToSDLWindow(renderer, pixelAmount);
 
     cout << "Finished painting " << pixelAmount << " pixels!\n";
     SDL_RenderPresent(renderer);    
@@ -77,7 +87,7 @@ int main(int argc, char *argv[]) {
                 if (event.key.key == SDLK_ESCAPE) {
                     running = false;
                 } else if(event.key.key == SDLK_P && !isBusy) {
-                    drawToPPMImage(pixelAmount, colorInfo);
+                    drawToPPMImage(pixelAmount);
                 }
             }
 
@@ -114,13 +124,15 @@ int main(int argc, char *argv[]) {
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 SDL_RenderClear(renderer);
 
-                renderMandelbrot(pixelAmount, colorInfo);
-                drawToSDLWindow(renderer, pixelAmount, colorInfo);
+                renderMandelbrot<<<blocks, threads_per_block>>>(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
+                cudaDeviceSynchronize();
+                drawToSDLWindow(renderer, pixelAmount);
                 SDL_RenderPresent(renderer);
             }
         }
     }
 
+    cudaFree(iterationInfo);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -136,58 +148,62 @@ by multiplying the relative position of img x and y with the the range we want t
 mandelbrot formular: z_n = (z_n-1)^2 + C
 colors are applied based on how fast/slow this sequence grows
 */
-void renderMandelbrot(int pixelAmount, int* colorInfo) {
-    isBusy = true;
-    for (size_t i = 0; i < pixelAmount; i++)
+__global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height, 
+    double baseZoom, double zoomfactor, double xOffset, double yOffset) {
+    int x = blockDim.x * blockIdx.x + threadIdx.x;        
+    int y = blockDim.y * blockIdx.y + threadIdx.y;
+
+    if (x >= width || y >= height) return;
+
+    double cartesianX = x - (width / 2);
+    double cartesianY = -(y - (height / 2));
+
+    double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
+    double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;
+
+    double zr = 0.0;
+    double zi = 0.0;
+
+    int iteration = 0;
+
+    while ((zr * zr + zi * zi) <= 4 && iteration < maxIterations)
     {
-        int x = i % width;        
-        int y = i / width;
+        double temp_zr = zr * zr - zi * zi;
+        zi = zr * zi + zi * zr;
+        zr = temp_zr;
 
-        double cartesianX = x - (width / 2);
-        double cartesianY = -(y - (height / 2));
+        zr += cr;
+        zi += ci;
 
-        double mX = cartesianX / (baseZoom * zoomfactor) + xOffset;
-        double mY = cartesianY / (baseZoom * zoomfactor) + yOffset;
-
-        ComplexNumber c = ComplexNumber(mX, mY);
-        ComplexNumber z = ComplexNumber(0, 0);
-
-        int iteration = 0;
-        while (z.absoluteValueSquared() <= 4 && iteration < maxIterations)
-        {
-            z = (z * z) + c;
-            iteration++;            
-        }
-        
-        array<uint8_t, 4U> color = calcPixelColor(iteration);
-        for (size_t k = 0; k < 4; k++)
-        {
-            colorInfo[i*4 + k] = color[k];
-        }
+        iteration++;            
     }
-    isBusy = false;
+    iterationInfo[width * y + x] = iteration;
 }
 
-void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount, int* colorInfo) {
+void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     isBusy = true;
+    array<uint8_t, 4> color;
+
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        SDL_SetRenderDrawColor(renderer, colorInfo[i*4], colorInfo[i*4+1], colorInfo[i*4+2], colorInfo[i*4+3]);
         int x = i % width;        
         int y = i / width;
+        color = calcPixelColor(iterationInfo[i]);
+        SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         SDL_RenderPoint(renderer, x, y);
     }
     isBusy = false;
 }
 
-void drawToPPMImage(int pixelAmount, int* colorInfo) {
+void drawToPPMImage(int pixelAmount) {
     isBusy = true;
-
     ofstream image = createPPM(width, height);
-
+    array<uint8_t, 4> color;
+    
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        image << (int)colorInfo[i*4] << " " << (int)colorInfo[i*4+1] << " " << (int)colorInfo[i*4+2] << "\n";
+        color = calcPixelColor(iterationInfo[i]);
+        image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
     isBusy = false;
 
