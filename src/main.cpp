@@ -81,31 +81,31 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            if (event.type == SDL_EVENT_MOUSE_WHEEL && !isBusy) {
+            if ((event.type == SDL_EVENT_MOUSE_WHEEL || event.type == SDL_EVENT_KEY_DOWN)&& !isBusy) {
                 float x, y;
                 Uint32 buttons = SDL_GetMouseState(&x, &y);
+                bool isPositiveZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y > 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_PLUS);
+                bool isNegativeZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y < 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_MINUS);
                 
-                if (event.wheel.y > 0)
+                x = x - width / 2;    //translate to cartesian position
+                y = -(y - height / 2);
+                
+                if (isPositiveZoom)
                 {
-                    x = x - width / 2;
-                    y = -(y - height / 2);
+                    x /= (baseZoom * zoomfactor);
+                    y /= (baseZoom * zoomfactor);
                     zoomfactor *= 2;
-                } else {
-                    x = -(x - width / 2);
-                    y = y - height / 2;
+                } else if (isNegativeZoom){
+                    x /= (baseZoom * zoomfactor);
+                    y /= (baseZoom * zoomfactor);
                     zoomfactor /= 2;
-                }
-                x /= (baseZoom * zoomfactor);
-                y /= (baseZoom * zoomfactor);
-
-                if (event.wheel.y > 0)
-                {
-                    xOffset += x;
-                    yOffset += y;
                 } else {
-                    xOffset -= x;
-                    yOffset -= y;
+                    continue;
                 }
+
+                xOffset += x;
+                yOffset += y;
+               
 
                 cout << "zoom: " << zoomfactor << "\n";
 
