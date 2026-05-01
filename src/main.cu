@@ -1,9 +1,12 @@
 #include <SDL3/SDL.h>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include "ComplexNumber.cpp"
+#include "ColorConverter.cpp"
+
 
 using namespace std;
 
@@ -12,6 +15,7 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
 __global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height,
      double baseZoom, double zoomfactor, double xOffset, double yOffset);
+void cudaRenderImage(SDL_Renderer* renderer);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
 array<uint8_t, 4> calcPixelColorSmooth(int iteration);
@@ -20,7 +24,7 @@ array<uint8_t, 4> calcPixelColorSmooth(int iteration);
 const int maxIterations = 1000;
 double baseZoom = 100;
 double zoomfactor = 1.0;
-double xOffset = -0.42;
+double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
 double yOffset = 0;
 
 //window and program
@@ -89,6 +93,15 @@ int main(int argc, char *argv[]) {
                     running = false;
                 } else if(event.key.key == SDLK_P && !isBusy) {
                     drawToPPMImage(pixelAmount);
+                } else if (event.key.key == SDLK_F && !isBusy) {
+                    zoomfactor = -zoomfactor;
+                    cudaRenderImage(renderer);
+
+                } else if (event.key.key == SDLK_R && !isBusy) {
+                    xOffset = -0.42;
+                    yOffset = 0.0;
+                    zoomfactor = 1.0;
+                    cudaRenderImage(renderer);
                 }
             }
 
@@ -119,16 +132,9 @@ int main(int argc, char *argv[]) {
                 xOffset += x;
                 yOffset += y;
                
+                cudaRenderImage(renderer);
 
                 cout << "zoom: " << zoomfactor << "\n";
-
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderClear(renderer);
-
-                renderMandelbrot<<<blocks, threads_per_block>>>(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
-                cudaDeviceSynchronize();
-                drawToSDLWindow(renderer, pixelAmount);
-                SDL_RenderPresent(renderer);
             }
         }
     }
@@ -139,6 +145,16 @@ int main(int argc, char *argv[]) {
     SDL_Quit();
 
     return 0;
+}
+
+void cudaRenderImage(SDL_Renderer* renderer) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+
+    renderMandelbrot<<<blocks, threads_per_block>>>(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
+    cudaDeviceSynchronize();
+    drawToSDLWindow(renderer, pixelAmount);
+    SDL_RenderPresent(renderer);
 }
 
 /*
@@ -189,7 +205,7 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     {
         int x = i % width;        
         int y = i / width;
-        color = calcPixelColor(iterationInfo[i]);
+        color = calcPixelColorSmooth(iterationInfo[i]);
         SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         SDL_RenderPoint(renderer, x, y);
     }
@@ -203,7 +219,7 @@ void drawToPPMImage(int pixelAmount) {
     
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        color = calcPixelColor(iterationInfo[i]);
+        color = calcPixelColorSmooth(iterationInfo[i]);
         image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
     isBusy = false;
@@ -224,9 +240,17 @@ ofstream createPPM(int width, int height) {
 
 array<uint8_t, 4> calcPixelColorSmooth(int iteration) {
     array<uint8_t, 4> color = {0, 0, 0, 255};
-    double percentMaxIt = maxIterations / iteration;
-    int val = 255 * percentMaxIt;
-    setColorValues(color, val, val, val, 255);
+
+    double s = (double)iteration/maxIterations;
+    if (s == 1.0) return color;
+
+    double v = 1.0 - powf(cos(M_PI * s), 2.0);
+    double L = 75 - (75 * v);
+    double C = 28 + (75 - (75 * v));
+    double h = fmod(powf(360 * s, 1.5f), 360);
+    array<double, 3> rgb = ColorConverter::lchToRgb(L, C, h);
+
+    setColorValues(color, rgb[0], rgb[1], rgb[2], 255);
 
     return color;
 }

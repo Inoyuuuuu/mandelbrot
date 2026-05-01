@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+
 struct ComplexNumber
 {
     double real;
