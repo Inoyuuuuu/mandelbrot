@@ -10,6 +10,7 @@ using namespace std;
 void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
+void renderImage(SDL_Renderer* renderer);
 void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height,
      double baseZoom, double zoomfactor, double xOffset, double yOffset);
 ofstream createPPM(int width, int height);
@@ -81,6 +82,15 @@ int main(int argc, char *argv[]) {
                     running = false;
                 } else if(event.key.key == SDLK_P && !isBusy) {
                     drawToPPMImage(pixelAmount);
+                } else if (event.key.key == SDLK_F && !isBusy) {
+                    zoomfactor = -zoomfactor;
+                    renderImage(renderer);
+
+                } else if (event.key.key == SDLK_R && !isBusy) {
+                    xOffset = -0.42;
+                    yOffset = 0.0;
+                    zoomfactor = 1.0;
+                    renderImage(renderer);
                 }
             }
 
@@ -91,7 +101,7 @@ int main(int argc, char *argv[]) {
                 bool isNegativeZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y < 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_MINUS);
                 
                 x = x - width / 2;    //translate to cartesian position
-                y = -(y - height / 2);
+                y = y - height / 2;
                 
                 if (isPositiveZoom)
                 {
@@ -132,6 +142,15 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+void renderImage(SDL_Renderer* renderer) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+
+    renderMandelbrot(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
+    drawToSDLWindow(renderer, pixelAmount);
+    SDL_RenderPresent(renderer);
+}
+
 /*
 Calculate Mandelbrot Set
 
@@ -151,7 +170,7 @@ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height
         if (x >= width || y >= height) return;
 
         double cartesianX = x - (width / 2);
-        double cartesianY = -(y - (height / 2));
+        double cartesianY = y - (height / 2);
 
         double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
         double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;

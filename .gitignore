@@ -7,3 +7,4 @@ renders/*.ppm
 CMakeFiles/*
 helper/*
 .vscode/*
+build/*
