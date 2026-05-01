@@ -21,7 +21,7 @@ array<uint8_t, 4> calcPixelColor(int iteration);
 array<uint8_t, 4> calcPixelColorLCH(int iteration);
 
 //mandelbrot
-const int maxIterations = 5000;
+const int maxIterations = 1000;
 double baseZoom = 100;
 double zoomfactor = 1.0;
 double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
@@ -107,30 +107,31 @@ int main(int argc, char *argv[]) {
 
             if ((event.type == SDL_EVENT_MOUSE_WHEEL || event.type == SDL_EVENT_KEY_DOWN)&& !isBusy) {
                 float x, y;
+                double mandel_x, mandel_y;
+
                 Uint32 buttons = SDL_GetMouseState(&x, &y);
                 bool isPositiveZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y > 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_PLUS);
                 bool isNegativeZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y < 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_MINUS);
                 
-                x = (x - width / 2);    //translate to cartesian position
-                y = (y - height / 2);
+                mandel_x = (x - width / 2);    //translate to cartesian position
+                mandel_y = (y - height / 2);
                 
+                mandel_x /= (baseZoom * zoomfactor);
+                mandel_y /= (baseZoom * zoomfactor);
+
                 if (isPositiveZoom)
                 {
-                    x /= (baseZoom * zoomfactor);
-                    y /= (baseZoom * zoomfactor);
                     zoomfactor *= 2;
                 } else if (isNegativeZoom){
-                    x /= (baseZoom * zoomfactor);
-                    y /= (baseZoom * zoomfactor);
-                    x = -x;
-                    y = -y;
+                    mandel_x = -mandel_x;
+                    mandel_y = -mandel_y;
                     zoomfactor /= 2;
                 } else {
                     continue;
                 }
 
-                xOffset += x;
-                yOffset += y;
+                xOffset += mandel_x;
+                yOffset += mandel_y;
                
                 cudaRenderImage(renderer);
 
