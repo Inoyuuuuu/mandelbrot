@@ -111,8 +111,8 @@ int main(int argc, char *argv[]) {
                 bool isPositiveZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y > 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_PLUS);
                 bool isNegativeZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y < 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_MINUS);
                 
-                x = x - width / 2;    //translate to cartesian position
-                y = -(y - height / 2);
+                x = (x - width / 2);    //translate to cartesian position
+                y = (y - height / 2);
                 
                 if (isPositiveZoom)
                 {
@@ -172,8 +172,8 @@ __global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width,
 
     if (x >= width || y >= height) return;
 
-    double cartesianX = x - (width / 2);
-    double cartesianY = -(y - (height / 2));
+    double cartesianX = (x - (width / 2));
+    double cartesianY = (y - (height / 2));
 
     double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
     double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;
@@ -183,7 +183,7 @@ __global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width,
 
     int iteration = 0;
 
-    while ((zr * zr + zi * zi) <= 4 && iteration < maxIterations)
+    while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
     {
         //z = z^2 + c
         double temp_zr = zr * zr - zi * zi;
@@ -205,7 +205,7 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     {
         int x = i % width;        
         int y = i / width;
-        color = calcPixelColor(iterationInfo[i]);
+        color = calcPixelColorLCH(iterationInfo[i]);
         SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         SDL_RenderPoint(renderer, x, y);
     }
@@ -219,7 +219,7 @@ void drawToPPMImage(int pixelAmount) {
     
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        color = calcPixelColor(iterationInfo[i]);
+        color = calcPixelColorLCH(iterationInfo[i]);
         image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
     isBusy = false;
