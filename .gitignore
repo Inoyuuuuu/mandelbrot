@@ -6,3 +6,4 @@ mandelbrot
 renders/*.ppm
 CMakeFiles/*
 helper/*
+.vscode/*
