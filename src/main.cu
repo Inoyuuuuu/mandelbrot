@@ -14,6 +14,7 @@ __global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width,
      double baseZoom, double zoomfactor, double xOffset, double yOffset);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
+array<uint8_t, 4> calcPixelColorSmooth(int iteration);
 
 //mandelbrot
 const int maxIterations = 1000;
@@ -221,102 +222,171 @@ ofstream createPPM(int width, int height) {
     return image;
 }
 
+array<uint8_t, 4> calcPixelColorSmooth(int iteration) {
+    array<uint8_t, 4> color = {0, 0, 0, 255};
+    double percentMaxIt = maxIterations / iteration;
+    int val = 255 * percentMaxIt;
+    setColorValues(color, val, val, val, 255);
+
+    return color;
+}
+
 array<uint8_t, 4> calcPixelColor(int iteration) {
     array<uint8_t, 4> color = {0, 0, 0, 255};
 
-    int gradientSteps = 30;
+    int gradientSteps = 50;
     int mappedIteration = (int)(((double)iteration / maxIterations) * (gradientSteps - 1));
     
     switch (mappedIteration)
     {
     case 0:
-        setColorValues(color, 17, 32, 45, 255);
+        setColorValues(color, 11, 11, 11, 255);
         return color;
     case 1:
-        setColorValues(color, 45, 70, 37, 255);
+        setColorValues(color, 20, 15, 23, 255);
         return color;
     case 2:
-        setColorValues(color, 73, 109, 29, 255);
+        setColorValues(color, 29, 20, 35, 255);
         return color;
     case 3:
-        setColorValues(color, 101, 147, 22, 255);
+        setColorValues(color, 37, 24, 48, 255);
         return color;
     case 4:
-        setColorValues(color, 129, 186, 14, 255);
+        setColorValues(color, 46, 28, 60, 255);
         return color;
     case 5:
-        setColorValues(color, 157, 224, 6, 255);
+        setColorValues(color, 55, 32, 72, 255);
         return color;
     case 6:
-        setColorValues(color, 173, 255, 4, 255);
+        setColorValues(color, 64, 37, 84, 255);
         return color;
     case 7:
-        setColorValues(color, 142, 255, 24, 255);
+        setColorValues(color, 72, 41, 97, 255);
         return color;
     case 8:
-        setColorValues(color, 111, 255, 44, 255);
+        setColorValues(color, 81, 45, 109, 255);
         return color;
     case 9:
-        setColorValues(color, 80, 255, 63, 255);
+        setColorValues(color, 90, 50, 121, 255);
         return color;
     case 10:
-        setColorValues(color, 49, 255, 83, 255);
+        setColorValues(color, 99, 54, 132, 255);
         return color;
     case 11:
-        setColorValues(color, 19, 255, 103, 255);
+        setColorValues(color, 109, 58, 140, 255);
         return color;
     case 12:
-        setColorValues(color, 0, 254, 125, 255);
+        setColorValues(color, 118, 63, 147, 255);
         return color;
     case 13:
-        setColorValues(color, 0, 250, 149, 255);
+        setColorValues(color, 128, 67, 155, 255);
         return color;
     case 14:
-        setColorValues(color, 0, 247, 173, 255);
+        setColorValues(color, 138, 72, 162, 255);
         return color;
     case 15:
-        setColorValues(color, 0, 244, 197, 255);
+        setColorValues(color, 147, 76, 169, 255);
         return color;
     case 16:
-        setColorValues(color, 0, 241, 221, 255);
+        setColorValues(color, 157, 81, 177, 255);
         return color;
     case 17:
-        setColorValues(color, 0, 237, 245, 255);
+        setColorValues(color, 167, 85, 184, 255);
         return color;
     case 18:
-        setColorValues(color, 11, 212, 255, 255);
+        setColorValues(color, 176, 90, 191, 255);
         return color;
     case 19:
-        setColorValues(color, 30, 171, 254, 255);
+        setColorValues(color, 186, 94, 199, 255);
         return color;
     case 20:
-        setColorValues(color, 48, 130, 254, 255);
+        setColorValues(color, 194, 97, 198, 255);
         return color;
     case 21:
-        setColorValues(color, 66, 90, 254, 255);
+        setColorValues(color, 200, 97, 186, 255);
         return color;
     case 22:
-        setColorValues(color, 85, 49, 253, 255);
+        setColorValues(color, 205, 97, 173, 255);
         return color;
     case 23:
-        setColorValues(color, 103, 8, 253, 255);
+        setColorValues(color, 211, 97, 161, 255);
         return color;
     case 24:
-        setColorValues(color, 92, 0, 218, 255);
+        setColorValues(color, 216, 97, 148, 255);
         return color;
     case 25:
-        setColorValues(color, 74, 0, 174, 255);
+        setColorValues(color, 222, 97, 136, 255);
         return color;
     case 26:
-        setColorValues(color, 55, 0, 131, 255);
+        setColorValues(color, 227, 97, 123, 255);
         return color;
     case 27:
-        setColorValues(color, 37, 0, 87, 255);
+        setColorValues(color, 233, 97, 111, 255);
         return color;
     case 28:
-        setColorValues(color, 18, 0, 44, 255);
+        setColorValues(color, 238, 97, 98, 255);
         return color;
     case 29:
+        setColorValues(color, 244, 97, 86, 255);
+        return color;
+    case 30:
+        setColorValues(color, 245, 93, 78, 255);
+        return color;
+    case 31:
+        setColorValues(color, 242, 86, 74, 255);
+        return color;
+    case 32:
+        setColorValues(color, 240, 78, 69, 255);
+        return color;
+    case 33:
+        setColorValues(color, 238, 71, 64, 255);
+        return color;
+    case 34:
+        setColorValues(color, 236, 64, 60, 255);
+        return color;
+    case 35:
+        setColorValues(color, 233, 57, 55, 255);
+        return color;
+    case 36:
+        setColorValues(color, 231, 50, 51, 255);
+        return color;
+    case 37:
+        setColorValues(color, 229, 43, 46, 255);
+        return color;
+    case 38:
+        setColorValues(color, 227, 36, 42, 255);
+        return color;
+    case 39:
+        setColorValues(color, 224, 28, 37, 255);
+        return color;
+    case 40:
+        setColorValues(color, 206, 25, 33, 255);
+        return color;
+    case 41:
+        setColorValues(color, 183, 22, 29, 255);
+        return color;
+    case 42:
+        setColorValues(color, 160, 19, 26, 255);
+        return color;
+    case 43:
+        setColorValues(color, 137, 17, 22, 255);
+        return color;
+    case 44:
+        setColorValues(color, 114, 14, 18, 255);
+        return color;
+    case 45:
+        setColorValues(color, 91, 11, 15, 255);
+        return color;
+    case 46:
+        setColorValues(color, 69, 8, 11, 255);
+        return color;
+    case 47:
+        setColorValues(color, 46, 6, 7, 255);
+        return color;
+    case 48:
+        setColorValues(color, 23, 3, 4, 255);
+        return color;
+    case 49:
         setColorValues(color, 0, 0, 0, 255);
         return color;
     default:
