@@ -10,7 +10,7 @@ This project uses the [SDL3 library](https://www.libsdl.org/) as git submodule i
 - Adjust window size using the commanline arguments (e.g. `./mandelbrot 900 700`)
 - "Esc" or close window to close the application
 
-#### How do I build and run this project? (only tested on Linux)
+#### How do I build and run this project? (tested on Windows 11 and Linux)
 - c++ compiler, make and cmake (e.g. using MinGW installed over Msys2)
 - clone this repo with `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`
 - switch to this branch with `git switch without-cuda`
