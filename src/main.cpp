@@ -169,20 +169,29 @@ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height
 
         if (x >= width || y >= height) return;
 
-        double cartesianX = x - (width / 2);
-        double cartesianY = y - (height / 2);
+        int cartesianX = x - (width / 2);
+        int cartesianY = y - (height / 2);
 
-        double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
-        double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;
+        int cr = cartesianX * (baseZoom); //cartesianX / (baseZoom * zoomfactor) + xOffset;
+        int ci = cartesianY * (baseZoom);
 
-        double zr = 0.0;
-        double zi = 0.0;
+        int zr = 0;
+        int zr_d = 0;
+        int zr_d_zeros = 0; //.0
+
+        int zi = 0;
+        unsigned long long zi_d = 0;
+        int zi_d_zeros = 0;
 
         int iteration = 0;
 
         while ((zr * zr + zi * zi) <= 4 && iteration < maxIterations)
         {
-            double temp_zr = zr * zr - zi * zi;
+            int temp_zr_i = (zr * zr) + (2 *(zr_d * zr - ));
+            int temp_zr_d = zr_d * zr_d;
+
+            
+
             zi = zr * zi + zi * zr;
             zr = temp_zr;
 
