@@ -3,9 +3,9 @@ A mandelbrot visualization project written in C/C++ and CUDA to implement GPU pa
 This project uses the [SDL3 library](https://www.libsdl.org/) as git submodule in order to display the mandelbrot set.
 
 <div id="imgs">
-  <img src="example_renders\mandel.png" width="33%">
-  <img src="example_renders\mandel4.png" width="33%">
-  <img src="example_renders\mandel5.png" width="33%">
+  <img src="example_renders\mandel.png" width="30%">
+  <img src="example_renders\mandel4.png" width="30%">
+  <img src="example_renders\mandel5.png" width="30%">
 </div>
 
 ### About Mandelbrot And This Project 
