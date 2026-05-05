@@ -15,11 +15,13 @@ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height
      double baseZoom, double zoomfactor, double xOffset, double yOffset);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
+array<uint8_t, 4> calcPixelColorInterpolation(int iteration);
+
 
 //mandelbrot
 const int maxIterations = 1000;
 double baseZoom = 100;
-double zoomfactor = 1.0;
+double zoomfactor = 2.0;
 double xOffset = -0.42;
 double yOffset = 0;
 
@@ -89,7 +91,7 @@ int main(int argc, char *argv[]) {
                 } else if (event.key.key == SDLK_R && !isBusy) {
                     xOffset = -0.42;
                     yOffset = 0.0;
-                    zoomfactor = 1.0;
+                    zoomfactor = 2.0;
                     renderImage(renderer);
                 }
             }
@@ -204,7 +206,7 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     {
         int x = i % width;        
         int y = i / width;
-        color = calcPixelColor(iterationInfo[i]);
+        color = calcPixelColorInterpolation(iterationInfo[i]);
         SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         SDL_RenderPoint(renderer, x, y);
     }
@@ -218,7 +220,7 @@ void drawToPPMImage(int pixelAmount) {
     
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        color = calcPixelColor(iterationInfo[i]);
+        color = calcPixelColorInterpolation(iterationInfo[i]);
         image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
     isBusy = false;
@@ -237,8 +239,17 @@ ofstream createPPM(int width, int height) {
     return image;
 }
 
-array<uint8_t, 4> calcPixelColor(int iteration) {
+void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    c[0] = r;
+    c[1] = g;
+    c[2] = b;
+    c[3] = a;
+}
+
+array<uint8_t, 4> calcPixelColorSwitch(int iteration) {
     array<uint8_t, 4> color = {0, 0, 0, 255};
+
+    if (iteration == maxIterations) return color;
 
     int gradientSteps = 30;
     int mappedIteration = (int)(((double)iteration / maxIterations) * (gradientSteps - 1));
@@ -341,9 +352,41 @@ array<uint8_t, 4> calcPixelColor(int iteration) {
     }
 }
 
-void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    c[0] = r;
-    c[1] = g;
-    c[2] = b;
-    c[3] = a;
+array<uint8_t, 4> calcPixelColorInterpolation(int iteration) {
+    array<uint8_t, 4> color = {0, 0, 0, 255};
+
+    if (iteration == maxIterations) return color;
+
+    // Normalize iteration to 0-1 range using global maxIterations
+    float t = (float)iteration / (float)maxIterations;
+
+    // Define gradient keypoints
+    float keypoints[] = {0.0000, 0.2000, 0.4000, 0.6000, 0.8000, 1.0000};
+
+    int colorR[] = {77, 244, 101, 15, 30, 255};
+    int colorG[] = {0, 0, 43, 147, 255, 255};
+    int colorB[] = {170, 226, 255, 255, 227, 255};
+
+    // Find the segment
+    int segment = 0;
+    for (int i = 0; i < 5; i++) {
+        if (t >= keypoints[i] && t <= keypoints[i + 1]) {
+            segment = i;
+            break;
+        }
+    }
+
+    // Interpolate within segment
+    float segmentStart = keypoints[segment];
+    float segmentEnd = keypoints[segment + 1];
+    float localT = (t - segmentStart) / (segmentEnd - segmentStart);
+
+    // Linear interpolation
+    int r = (int)(colorR[segment] + (colorR[segment + 1] - colorR[segment]) * localT);
+    int g = (int)(colorG[segment] + (colorG[segment + 1] - colorG[segment]) * localT);
+    int b = (int)(colorB[segment] + (colorB[segment + 1] - colorB[segment]) * localT);
+
+    setColorValues(color, r, g, b, 255);
+    return color;
 }
+
