@@ -1,6 +1,6 @@
 # Mandelbrot Set Visualization
 A mandelbrot visualization project written in C/C++ and CUDA to implement GPU parallelization for increased calculation speeds. 
-This project uses the [SDL3 library](https://www.libsdl.org/) as git submodule in order to display the mandelbrot set.\
+This project uses the [SDL3 library](https://www.libsdl.org/) as git submodule in order to display the mandelbrot set.
 
 <div id="imgs">
   <img src="example_renders\mandel.png" width="33%">
