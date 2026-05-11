@@ -4,35 +4,32 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
-#include "ComplexNumber.cpp"
 #include "ColorConverter.cpp"
-
 
 using namespace std;
 
 void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
-__global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height,
-     double baseZoom, double zoomfactor, double xOffset, double yOffset);
+__global__ void renderMandelbrot(int* iterationInfo);
 void cudaRenderImage(SDL_Renderer* renderer);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
 array<uint8_t, 4> calcPixelColorLCH(int iteration);
 
 //mandelbrot
-const int maxIterations = 1000;
-double baseZoom = 100;
-double zoomfactor = 1.0;
-double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
-double yOffset = 0;
+__managed__ int maxIterations = 1000;
+__managed__ double baseZoom = 100;
+__managed__ double zoomfactor = 1.0;
+__managed__ double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
+__managed__ double yOffset = 0;
 
 //window and program
-int width;
-int height;
+__managed__ int width;
+__managed__ int height;
+__managed__ size_t pixelAmount;
 bool isBusy = false;
 int* iterationInfo;
-size_t pixelAmount;
 
 //cuda
 dim3 threads_per_block(32, 32);
@@ -69,7 +66,7 @@ int main(int argc, char *argv[]) {
     dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
     blocks = tmp_blocks;
     cout << "launching with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads!\n";
-    renderMandelbrot<<<blocks, threads_per_block>>>(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
+    renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
     cudaDeviceSynchronize();
 
     cout << "Mandelbrot done! Starting Render\n";
@@ -77,7 +74,7 @@ int main(int argc, char *argv[]) {
     drawToSDLWindow(renderer, pixelAmount);
 
     cout << "Finished painting " << pixelAmount << " pixels!\n";
-    SDL_RenderPresent(renderer);    
+    SDL_RenderPresent(renderer);
 
     bool running = true;
     SDL_Event event;
@@ -134,7 +131,7 @@ int main(int argc, char *argv[]) {
                 yOffset += mandel_y;
                
                 cudaRenderImage(renderer);
-
+                
                 cout << "zoom: " << zoomfactor << "\n";
             }
         }
@@ -152,7 +149,7 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    renderMandelbrot<<<blocks, threads_per_block>>>(pixelAmount, iterationInfo, width, height, baseZoom, zoomfactor, xOffset, yOffset);
+    renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
     cudaDeviceSynchronize();
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
@@ -166,8 +163,7 @@ by multiplying the relative position of img x and y with the the range we want t
 mandelbrot formular: z_n = (z_n-1)^2 + C
 colors are applied based on how fast/slow this sequence grows
 */
-__global__ void renderMandelbrot(int pixelAmount, int* iterationInfo, int width, int height, 
-    double baseZoom, double zoomfactor, double xOffset, double yOffset) {
+__global__ void renderMandelbrot(int* iterationInfo) {
     int x = blockDim.x * blockIdx.x + threadIdx.x;        
     int y = blockDim.y * blockIdx.y + threadIdx.y;
 
