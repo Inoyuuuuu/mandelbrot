@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <string>
 #include "ColorConverter.cpp"
 
 using namespace std;
