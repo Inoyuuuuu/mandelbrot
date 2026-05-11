@@ -10,3 +10,17 @@ helper/*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+build
+Debug
+Release
+mandelbrot.dir
+x64
+ZERO_CHECK.dir
+
+# Visual Studio
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+.vs/
+*.slnx
