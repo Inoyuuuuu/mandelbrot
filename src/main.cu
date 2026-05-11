@@ -243,8 +243,9 @@ array<uint8_t, 4> calcPixelColorLCH(int iteration) {
     array<uint8_t, 4> color = {0, 0, 0, 255};
     if (iteration == maxIterations) return color;
 
+    const double pi = 3.141592;
     double s = (double)iteration/maxIterations;
-    double v = 1.0 - powf(cos(M_PI * s), 2.0);
+    double v = 1.0 - powf(cos(pi * s), 2.0);
     double L = 75 - (75 * v);
     double C = 28 + (75 - (75 * v));
     double h = fmod(powf(360 * s, 1.5f), 360);

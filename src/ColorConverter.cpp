@@ -38,8 +38,9 @@ class ColorConverter {
         }
 
         static array<double, 3> lchToLab(double L, double C, double h) {
-            double lab_a = C * cos(h * M_PI / 180);
-            double lab_b = C * sin(h * M_PI / 180);
+            const double pi = 3.141592;
+            double lab_a = C * cos(h * pi / 180);
+            double lab_b = C * sin(h * pi / 180);
             array<double, 3> lab = {L, lab_a, lab_b};
 
             return lab;
