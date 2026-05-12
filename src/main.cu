@@ -13,6 +13,7 @@ void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
 __global__ void renderMandelbrot(int* iterationInfo);
+void calculateOrbit(long double* x_n);
 void cudaRenderImage(SDL_Renderer* renderer);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
@@ -24,6 +25,10 @@ __managed__ double baseZoom = 100;
 __managed__ double zoomfactor = 1.0;
 __managed__ double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
 __managed__ double yOffset = 0;
+
+//arbitrary precision
+long double* x_n;
+__managed__ int x_iterations = 0;
 
 //window and program
 __managed__ int width;
@@ -57,25 +62,20 @@ int main(int argc, char *argv[]) {
     if (!window) return -1;
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer) return -1;
-
     pixelAmount = width * height;
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    cout << "Setup done! Starting Mandelbrot...\n";
+
+    //cuda init
+    cudaMallocManaged(&x_n, sizeof(long double) * maxIterations);
 
     cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
     dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
     blocks = tmp_blocks;
-    cout << "launching with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads!\n";
-    renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
-    cudaDeviceSynchronize();
 
-    cout << "Mandelbrot done! Starting Render\n";
+    cout << "Launching mandelbrot calculations with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads!\n";
+    
+    cudaRenderImage(renderer);
 
-    drawToSDLWindow(renderer, pixelAmount);
-
-    cout << "Finished painting " << pixelAmount << " pixels!\n";
-    SDL_RenderPresent(renderer);
+    cout << "Mandelbrot calculations & render done! Finished with" << pixelAmount << " pixels!\n";
 
     bool running = true;
     SDL_Event event;
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
 
                 xOffset += mandel_x;
                 yOffset += mandel_y;
-               
+                
                 cudaRenderImage(renderer);
                 
                 cout << "zoom: " << zoomfactor << "\n";
@@ -152,6 +152,9 @@ void cudaRenderImage(SDL_Renderer* renderer) {
 
     renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
     cudaDeviceSynchronize();
+    
+    calculateOrbit(x_n);
+
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
 }
@@ -192,7 +195,43 @@ __global__ void renderMandelbrot(int* iterationInfo) {
 
         iteration++;            
     }
+
     iterationInfo[width * y + x] = iteration;
+}
+
+void calculateOrbit(long double* x_n) {
+    long double cartesianX = 0;
+    long double cartesianY = 0;
+
+    long double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
+    long double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;
+
+    long double zr = 0.0;
+    long double zi = 0.0;
+
+    int iteration = 0;
+
+    while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
+    {
+        //z = z^2 + c
+        long double temp_zr = zr * zr - zi * zi;
+        zi = 2 * zr * zi;
+        zr = temp_zr;
+        zr += cr;
+        zi += ci;
+
+        x_n[iteration * 2] = zr;
+        x_n[iteration * 2 + 1] = zi;
+
+        iteration++;
+    }
+    x_iterations = iteration;
+
+    for (size_t i = 0; i < x_iterations; i++)
+    {
+        printf("C_%d: %Lf + %Lfi\n", i, x_n[i*2], x_n[i*2+1]);
+    }
+    
 }
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
