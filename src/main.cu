@@ -37,19 +37,22 @@ dim3 threads_per_block(32, 32);
 dim3 blocks(1, 1);
 
 int main(int argc, char *argv[]) {
-    try
-    {
-        width = stoi(argv[1]);
-        height = stoi(argv[1]);
-        if (argc >= 3) height = stoi(argv[2]);
-    }
-    catch(const exception& e)
-    {
+    width = 300;
+    height = 300;
+
+    try {
+        if (argc >= 2) {
+            width = stoi(argv[1]);
+            height = width;
+        }
+        if (argc >= 3) {
+            height = stoi(argv[2]);
+        }
+    } catch (const exception& e) {
         cerr << e.what() << '\n';
-        cout << "Using default values (300x300).\n";
-        width = 300;
-        height = 300;
+        std::cout << "Using default values (300x300).\n";
     }
+
 
     //init
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -81,7 +84,7 @@ int main(int argc, char *argv[]) {
 
     dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
     blocks = tmp_blocks;
-    cout << "CUDA kernels will launch with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads...\n";
+    std::cout << "CUDA kernels will launch with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads...\n";
     
     cudaRenderImage(renderer);
     error = cudaGetLastError();
@@ -92,7 +95,7 @@ int main(int argc, char *argv[]) {
 
     drawToSDLWindow(renderer, pixelAmount);
 
-    cout << "Finished rendering " << pixelAmount << " pixels!\n";
+    std::cout << "Finished rendering " << pixelAmount << " pixels!\n";
 
     bool running = true;
     SDL_Event event;
@@ -150,7 +153,7 @@ int main(int argc, char *argv[]) {
                
                 cudaRenderImage(renderer);
                 
-                cout << "zoom: " << zoomfactor << "\n";
+                std::cout << "zoom: " << zoomfactor << "\n";
             }
         }
     }
