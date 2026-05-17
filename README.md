@@ -36,7 +36,8 @@ Windows
 - install [Cuda Toolkit](https://developer.nvidia.com/cuda/toolkit) (version compatible with your gpu)
 - clone this repo with submodules via `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`
 - open with e.g. visual studio code and choose your c++ compiler
-- type `cmake -S . -B build -G "Visual Studio 18 2026" -A x64` in a terminal and afterwards `cmake -G "Visual Studio 18 2026" -A x64` to build the executable
-- navigate into the folder containing the executable and type `./mandelbrot` to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
+- open a terminal within the project and type `cmake -S . -B build -G "Visual Studio 18 2026"`
+- then `cmake --build build --config Release` to build the executable (should be located in /build/Release)
+- navigate into that folder with `cd ./build/Release` and type `./mandelbrot` to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
 
 A CPU-only version can be found on [this branch](https://github.com/Inoyuuuuu/mandelbrot/tree/without-cuda).
