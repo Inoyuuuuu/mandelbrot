@@ -52,30 +52,47 @@ int main(int argc, char *argv[]) {
     }
 
     //init
-    if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        cerr << "ERROR: SDL_Init failed.";
+        return -1;
+    }
+
     SDL_Window* window = SDL_CreateWindow("SDL3 Window", width, height, 0);
-    if (!window) return -1;
+    if (!window) {
+        cerr << "ERROR: SDL_CreateWindow failed.";
+        SDL_DestroyWindow(window);
+        return -1;
+    }
+
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (!renderer) return -1;
+    if (!renderer) {
+        cerr << "ERROR: SDL_CreateRenderer failed.";
+        SDL_DestroyRenderer(renderer);
+        return -1;
+    }
 
     pixelAmount = width * height;
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    cout << "Setup done! Starting Mandelbrot...\n";
 
-    cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
+    cudaError_t error = cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
+    if (error != cudaSuccess) {
+        cerr << "ERROR: cudaMallocManaged failed with: " << cudaGetErrorString(error);
+        return -1;
+    }
+
     dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
     blocks = tmp_blocks;
-    cout << "launching with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads!\n";
-    renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
-    cudaDeviceSynchronize();
-
-    cout << "Mandelbrot done! Starting Render\n";
+    cout << "CUDA kernels will launch with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads...\n";
+    
+    cudaRenderImage(renderer);
+    error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        cerr << "ERROR: kernel launch failed with: " << cudaGetErrorString(error);
+        return -1;
+    }
 
     drawToSDLWindow(renderer, pixelAmount);
 
-    cout << "Finished painting " << pixelAmount << " pixels!\n";
-    SDL_RenderPresent(renderer);
+    cout << "Finished rendering " << pixelAmount << " pixels!\n";
 
     bool running = true;
     SDL_Event event;
@@ -151,6 +168,7 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_RenderClear(renderer);
 
     renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
+
     cudaDeviceSynchronize();
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
@@ -220,6 +238,7 @@ void drawToPPMImage(int pixelAmount) {
         color = calcPixelColorLCH(iterationInfo[i]);
         image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
+    image.close();
     isBusy = false;
 
 }
