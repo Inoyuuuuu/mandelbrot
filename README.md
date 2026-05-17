@@ -23,11 +23,20 @@ In my code, the gpu stores these calculated iteration values on shared memory so
 - "Esc" or close window to close program
 
 ### How do I build and run this project? (tested with CUDA on Linux)
-- use [Cuda Toolkit](https://developer.nvidia.com/cuda/toolkit) (choose the version that fits your gpu)
-- clone this repo with `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`
-- open with visual studio code and choose your c++ compiler
-- type `cmake .` in the terminal and afterwards `make` to build the executable
-- type `./mandelbrot` to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
+Linux (recommended)
+- install c++ compiler and build tools
+- install [Cuda Toolkit](https://developer.nvidia.com/cuda/toolkit) (version compatible with your gpu)
+- clone this repo with submodules via `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`
+- open with e.g. visual studio code and choose your c++ compiler
+- type `cmake .` in a terminal and afterwards `make` to build the executable
+- navigate into the folder containing the executable and type `./mandelbrot` to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
 
-A older version without CUDA (runs only on the CPU) is on [this branch](https://github.com/Inoyuuuuu/mandelbrot/tree/without-cuda).\
-The CPU version also runs on Windows when using mingw.
+Windows
+- install [microsoft build tools](https://visualstudio.microsoft.com/de/visual-cpp-build-tools/) (make sure to select "Desktop development with C++")
+- install [Cuda Toolkit](https://developer.nvidia.com/cuda/toolkit) (version compatible with your gpu)
+- clone this repo with submodules via `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`
+- open with e.g. visual studio code and choose your c++ compiler
+- type `cmake -S . -B build -G "Visual Studio 18 2026" -A x64` in a terminal and afterwards `cmake -G "Visual Studio 18 2026" -A x64` to build the executable
+- navigate into the folder containing the executable and type `./mandelbrot` to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
+
+A CPU-only version can be found on [this branch](https://github.com/Inoyuuuuu/mandelbrot/tree/without-cuda).
