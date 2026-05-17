@@ -12,7 +12,7 @@ using namespace std;
 void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
-__global__ void renderMandelbrot(int* iterationInfo);
+void renderMandelbrotCPU_deepZoom(int* iterationInfo);
 void calculateOrbit(long double* x_n);
 void cudaRenderImage(SDL_Renderer* renderer);
 ofstream createPPM(int width, int height);
@@ -21,14 +21,14 @@ array<uint8_t, 4> calcPixelColorLCH(int iteration);
 
 //mandelbrot
 __managed__ int maxIterations = 1000;
-__managed__ double baseZoom = 100;
-__managed__ double zoomfactor = 1.0;
-__managed__ double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
-__managed__ double yOffset = 0;
+ int baseZoom = 100;
+ long double zoomfactor = 1.0;
+ long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
+ long double yOffset = 0;
 
 //arbitrary precision
-long double* x_n;
-__managed__ int x_iterations = 0;
+long double* x_orbit;
+__managed__ int x_orbitIterations = 0;
 
 //window and program
 __managed__ int width;
@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     pixelAmount = width * height;
 
     //cuda init
-    cudaMallocManaged(&x_n, sizeof(long double) * maxIterations);
+    cudaMallocManaged(&x_orbit, sizeof(long double) * maxIterations);
 
     cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
     dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
     
     cudaRenderImage(renderer);
 
-    cout << "Mandelbrot calculations & render done! Finished with" << pixelAmount << " pixels!\n";
+    cout << "Mandelbrot calculations & render done! Finished with " << pixelAmount << " pixels!\n";
 
     bool running = true;
     SDL_Event event;
@@ -150,56 +150,135 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
-    cudaDeviceSynchronize();
+    calculateOrbit(x_orbit);
     
-    calculateOrbit(x_n);
-
+    //renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
+    //cudaDeviceSynchronize();
+    renderMandelbrotCPU_deepZoom(iterationInfo);
+    
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
 }
 
-/*
-Calculate Mandelbrot Set
+void renderMandelbrotCPU_deepZoom(int* iterationInfo) {
+    bool debugPrint = false;
 
-mapping x and y value of img to lie on mandelbrot x scale (typical mandelbrot scale: x: -2.0 to 0.47; y: -1.12 to 1.12), 
-by multiplying the relative position of img x and y with the the range we want to look at and adding back on
-mandelbrot formular: z_n = (z_n-1)^2 + C
-colors are applied based on how fast/slow this sequence grows
-*/
-__global__ void renderMandelbrot(int* iterationInfo) {
-    int x = blockDim.x * blockIdx.x + threadIdx.x;        
-    int y = blockDim.y * blockIdx.y + threadIdx.y;
+    for (size_t k = 0; k < pixelAmount; k++)
+    {        
+        double cartesianX = k % width;
+        double cartesianY = k / width;
 
-    if (x >= width || y >= height) return;
+        if (debugPrint) printf("cartesianX %lf, cartesianY %lf\n", cartesianX, cartesianY);
 
-    double cartesianX = (x - (width / 2));
-    double cartesianY = (y - (height / 2));
-
-    double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
-    double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;
-
-    double zr = 0.0;
-    double zi = 0.0;
-
-    int iteration = 0;
-
-    while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
-    {
-        //z = z^2 + c
-        double temp_zr = zr * zr - zi * zi;
-        zi = 2 * zr * zi;
-        zr = temp_zr;
-        zr += cr;
-        zi += ci;
-
-        iteration++;            
+        double yr = cartesianX / (baseZoom * zoomfactor) + xOffset;
+        double yi = cartesianY / (baseZoom * zoomfactor) + yOffset;
+        
     }
-
-    iterationInfo[width * y + x] = iteration;
 }
 
+/*
+        double xr = 0.0;
+        double xi = 0.0;
+        double deltaZeroR = yr - xr; 
+        double deltaZeroI = yi - xi;
+        double deltaZeroR_sqr = deltaZeroR * deltaZeroR - deltaZeroI * deltaZeroI; 
+        double deltaZeroI_sqr = 2 * deltaZeroR * deltaZeroI;
+        double deltaZeroR_cub = deltaZeroR * deltaZeroR_sqr - deltaZeroI * deltaZeroI_sqr; 
+        double deltaZeroI_cub = deltaZeroR * deltaZeroI_sqr + deltaZeroR_sqr * deltaZeroI;
+
+        double* a_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
+        double* b_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
+        double* c_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
+
+        double* delta_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
+        double* y_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
+
+        a_orbit[0] = 0;
+        a_orbit[1] = 0;
+
+        b_orbit[0] = 0;
+        b_orbit[1] = 0;
+
+        c_orbit[0] = 0;
+        c_orbit[1] = 0;
+
+        y_orbit[0] = x_orbit[0];
+        y_orbit[1] = x_orbit[1];
+
+        for (size_t i = 1; i < maxIterations + 1; i++)
+        {
+            int n = i * 2;
+            int ni = n + 1;
+            int n_m1 = (i - 1) * 2;
+            int ni_m1 = n_m1 + 1;
+
+            //A_n = 2 * X_n-1 * A_n-1 + 1
+            a_orbit[n] = 2 * (x_orbit[n_m1] * a_orbit[n_m1] - x_orbit[ni_m1] * a_orbit[ni_m1]) + 1;
+            a_orbit[ni] = 2 * (x_orbit[n_m1] * a_orbit[ni_m1] + x_orbit[ni_m1] * a_orbit[n_m1]);
+            
+            //B_n = 2 * X_n-1 * B_n-1 + (A_n-1)^2
+            b_orbit[n] = 2 * (x_orbit[n_m1] * b_orbit[n_m1] - x_orbit[ni_m1] * b_orbit[ni_m1]) 
+                + (a_orbit[n_m1] * a_orbit[n_m1] - a_orbit[ni_m1] * a_orbit[ni_m1]);
+            b_orbit[ni] = 2 * (x_orbit[n_m1] * b_orbit[ni_m1] + x_orbit[ni_m1] * b_orbit[n_m1]) 
+                + (2 * a_orbit[n_m1] * a_orbit[ni_m1]);
+
+            //C_n = 2 * X_n-1 * C_n-1 + 2 * A_n-1 * B_n-1
+            c_orbit[n] = 2 * (x_orbit[n_m1] * c_orbit[n_m1] - x_orbit[ni_m1] * c_orbit[ni_m1])
+                + 2 * (a_orbit[n_m1] * b_orbit[n_m1] - a_orbit[ni_m1] * b_orbit[ni_m1]);
+            c_orbit[ni] = 2 * (x_orbit[n_m1] * c_orbit[ni_m1] + x_orbit[ni_m1] * c_orbit[n_m1])
+                + 2 * (a_orbit[n_m1] * b_orbit[ni_m1] + a_orbit[ni_m1] * b_orbit[n_m1]);
+        
+
+            //(ac - bd) + (ad + bc)i
+
+            //D_n = A_n*d + B_n*d^2 + C_n*d^3
+            delta_orbit[n] = 
+                  (a_orbit[n] * deltaZeroR - a_orbit[ni] * deltaZeroI) 
+                + (b_orbit[n] * deltaZeroR_sqr - b_orbit[ni] * deltaZeroI_sqr)
+                + (c_orbit[n] * deltaZeroR_cub - c_orbit[ni] * deltaZeroI_cub);
+            delta_orbit[ni] = 
+                  (a_orbit[n] * deltaZeroI + a_orbit[ni] * deltaZeroR) 
+                + (b_orbit[n] * deltaZeroI_sqr + b_orbit[ni] * deltaZeroR_sqr) 
+                + (c_orbit[n] * deltaZeroI_cub + c_orbit[ni] * deltaZeroR_cub);
+
+            //D_n = Y_n - X_n
+            //Y_n = D_n + X_n
+            y_orbit[n] = delta_orbit[n] + x_orbit[n];
+            y_orbit[ni] = delta_orbit[ni] + x_orbit[ni];
+        }
+
+        free(a_orbit);
+        free(b_orbit);
+        free(c_orbit);
+        free(delta_orbit);
+
+        int iteration = 0;
+        for (size_t i = 0; i < maxIterations; i++)
+        {
+            //if (debugPrint) printf("it: %d, y orbit r: %lf, y orbit i: %lf\n", i, y_orbit[i + 2], y_orbit[i * 2 + 1]);
+            iteration = i;
+            
+            if (y_orbit[(i + 1) * 2] * y_orbit[(i + 1) * 2] + y_orbit[(i + 1) * 2 + 1] * y_orbit[(i + 1) * 2 + 1] >= 4) {    
+                break;
+            }
+        }
+
+        if (debugPrint) printf("paint pixel %d with iteration %d\n", k, iteration);
+        iterationInfo[k] = iteration;
+
+        free(y_orbit);
+*/
+
+
 void calculateOrbit(long double* x_n) {
+
+    for (size_t i = 0; i < maxIterations; i++)
+    {
+        x_n[i * 2] = 0;
+        x_n[i * 2 + 1] = 0;
+    }
+    
+
     long double cartesianX = 0;
     long double cartesianY = 0;
 
@@ -211,7 +290,7 @@ void calculateOrbit(long double* x_n) {
 
     int iteration = 0;
 
-    while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
+    while (iteration < maxIterations) //(zr * zr + zi * zi) < 4 &&  weglassen, weil punkt y evtl. die daten braucht
     {
         //z = z^2 + c
         long double temp_zr = zr * zr - zi * zi;
@@ -225,13 +304,14 @@ void calculateOrbit(long double* x_n) {
 
         iteration++;
     }
-    x_iterations = iteration;
+    x_orbitIterations = iteration;
 
-    for (size_t i = 0; i < x_iterations; i++)
+    /*
+    for (size_t i = 0; i < x_orbitIterations; i++)
     {
         printf("C_%d: %Lf + %Lfi\n", i, x_n[i*2], x_n[i*2+1]);
     }
-    
+    */
 }
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
@@ -242,7 +322,8 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     {
         int x = i % width;        
         int y = i / width;
-        color = calcPixelColorLCH(iterationInfo[i]);
+        
+        color = calcPixelColor(iterationInfo[i]);
         SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         SDL_RenderPoint(renderer, x, y);
     }
@@ -256,7 +337,7 @@ void drawToPPMImage(int pixelAmount) {
     
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        color = calcPixelColorLCH(iterationInfo[i]);
+        color = calcPixelColor(iterationInfo[i]);
         image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
     isBusy = false;
@@ -277,7 +358,7 @@ ofstream createPPM(int width, int height) {
 
 array<uint8_t, 4> calcPixelColorLCH(int iteration) {
     array<uint8_t, 4> color = {0, 0, 0, 255};
-    if (iteration == maxIterations) return color;
+    if (iteration == maxIterations || iteration == maxIterations - 1) return color;
 
     const double pi = 3.141592;
     double s = (double)iteration/maxIterations;
@@ -295,7 +376,7 @@ array<uint8_t, 4> calcPixelColorLCH(int iteration) {
 array<uint8_t, 4> calcPixelColor(int iteration) {
     array<uint8_t, 4> color = {0, 0, 0, 255};
 
-    if (iteration == maxIterations) return color;
+    if (iteration == maxIterations || iteration == maxIterations - 1) return color;
 
     int gradientSteps = 40;
     int mappedIteration = round(((double)iteration / maxIterations) * (gradientSteps - 1));
