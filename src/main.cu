@@ -13,7 +13,7 @@ void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
 void renderMandelbrotCPU_deepZoom(int* iterationInfo);
-void calculateOrbit(long double* x_n);
+void calculateOrbit(double* x_n);
 void cudaRenderImage(SDL_Renderer* renderer);
 ofstream createPPM(int width, int height);
 array<uint8_t, 4> calcPixelColor(int iteration);
@@ -21,13 +21,15 @@ array<uint8_t, 4> calcPixelColorLCH(int iteration);
 
 //mandelbrot
 __managed__ int maxIterations = 1000;
- int baseZoom = 100;
- long double zoomfactor = 1.0;
- long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
- long double yOffset = 0;
+int baseZoom = 100;
+double zoomfactor = 1.0;
+long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
+long double yOffset = 0;
 
 //arbitrary precision
-long double* x_orbit;
+double orbit_r;
+double orbit_i;
+double* x_orbit;
 __managed__ int x_orbitIterations = 0;
 
 //window and program
@@ -161,157 +163,74 @@ void cudaRenderImage(SDL_Renderer* renderer) {
 }
 
 void renderMandelbrotCPU_deepZoom(int* iterationInfo) {
-    bool debugPrint = false;
 
     for (size_t k = 0; k < pixelAmount; k++)
-    {        
-        double cartesianX = k % width;
-        double cartesianY = k / width;
+    {
+        long double x = k % width;
+        long double y = k / width;
 
-        if (debugPrint) printf("cartesianX %lf, cartesianY %lf\n", cartesianX, cartesianY);
+        long double deltaCr = (x - width * 0.5) / (baseZoom * zoomfactor);
+        long double deltaCi = (y - height * 0.5) / (baseZoom * zoomfactor);
 
-        double yr = cartesianX / (baseZoom * zoomfactor) + xOffset;
-        double yi = cartesianY / (baseZoom * zoomfactor) + yOffset;
-        
+        long double zr = 0;
+        long double zi = 0;
+
+        int i = 0;
+        while (i < x_orbitIterations)
+        {
+            // δz(n+1) = 2·z₀(n)·δz(n) + δz(n)² + δc
+            long double temp_zr = 2*(x_orbit[i*2]*zr - x_orbit[i*2+1]*zi)
+                                + (zr*zr - zi*zi)
+                                + deltaCr;
+            zi = 2*(x_orbit[i*2]*zi + x_orbit[i*2+1]*zr)
+               + (2*zr*zi)
+               + deltaCi;
+            zr = temp_zr;
+
+            // Escape test on full point Z(n) + δz(n)
+            long double full_zr = x_orbit[i*2] + zr;
+            long double full_zi = x_orbit[i*2+1] + zi;
+            if (full_zr*full_zr + full_zi*full_zi > 4.0) break;
+
+            i++;
+        }
+
+        iterationInfo[k] = i;
     }
 }
 
-/*
-        double xr = 0.0;
-        double xi = 0.0;
-        double deltaZeroR = yr - xr; 
-        double deltaZeroI = yi - xi;
-        double deltaZeroR_sqr = deltaZeroR * deltaZeroR - deltaZeroI * deltaZeroI; 
-        double deltaZeroI_sqr = 2 * deltaZeroR * deltaZeroI;
-        double deltaZeroR_cub = deltaZeroR * deltaZeroR_sqr - deltaZeroI * deltaZeroI_sqr; 
-        double deltaZeroI_cub = deltaZeroR * deltaZeroI_sqr + deltaZeroR_sqr * deltaZeroI;
 
-        double* a_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
-        double* b_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
-        double* c_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
-
-        double* delta_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
-        double* y_orbit = (double*)malloc(sizeof(double) * (maxIterations + 1) * 2);
-
-        a_orbit[0] = 0;
-        a_orbit[1] = 0;
-
-        b_orbit[0] = 0;
-        b_orbit[1] = 0;
-
-        c_orbit[0] = 0;
-        c_orbit[1] = 0;
-
-        y_orbit[0] = x_orbit[0];
-        y_orbit[1] = x_orbit[1];
-
-        for (size_t i = 1; i < maxIterations + 1; i++)
-        {
-            int n = i * 2;
-            int ni = n + 1;
-            int n_m1 = (i - 1) * 2;
-            int ni_m1 = n_m1 + 1;
-
-            //A_n = 2 * X_n-1 * A_n-1 + 1
-            a_orbit[n] = 2 * (x_orbit[n_m1] * a_orbit[n_m1] - x_orbit[ni_m1] * a_orbit[ni_m1]) + 1;
-            a_orbit[ni] = 2 * (x_orbit[n_m1] * a_orbit[ni_m1] + x_orbit[ni_m1] * a_orbit[n_m1]);
-            
-            //B_n = 2 * X_n-1 * B_n-1 + (A_n-1)^2
-            b_orbit[n] = 2 * (x_orbit[n_m1] * b_orbit[n_m1] - x_orbit[ni_m1] * b_orbit[ni_m1]) 
-                + (a_orbit[n_m1] * a_orbit[n_m1] - a_orbit[ni_m1] * a_orbit[ni_m1]);
-            b_orbit[ni] = 2 * (x_orbit[n_m1] * b_orbit[ni_m1] + x_orbit[ni_m1] * b_orbit[n_m1]) 
-                + (2 * a_orbit[n_m1] * a_orbit[ni_m1]);
-
-            //C_n = 2 * X_n-1 * C_n-1 + 2 * A_n-1 * B_n-1
-            c_orbit[n] = 2 * (x_orbit[n_m1] * c_orbit[n_m1] - x_orbit[ni_m1] * c_orbit[ni_m1])
-                + 2 * (a_orbit[n_m1] * b_orbit[n_m1] - a_orbit[ni_m1] * b_orbit[ni_m1]);
-            c_orbit[ni] = 2 * (x_orbit[n_m1] * c_orbit[ni_m1] + x_orbit[ni_m1] * c_orbit[n_m1])
-                + 2 * (a_orbit[n_m1] * b_orbit[ni_m1] + a_orbit[ni_m1] * b_orbit[n_m1]);
-        
-
-            //(ac - bd) + (ad + bc)i
-
-            //D_n = A_n*d + B_n*d^2 + C_n*d^3
-            delta_orbit[n] = 
-                  (a_orbit[n] * deltaZeroR - a_orbit[ni] * deltaZeroI) 
-                + (b_orbit[n] * deltaZeroR_sqr - b_orbit[ni] * deltaZeroI_sqr)
-                + (c_orbit[n] * deltaZeroR_cub - c_orbit[ni] * deltaZeroI_cub);
-            delta_orbit[ni] = 
-                  (a_orbit[n] * deltaZeroI + a_orbit[ni] * deltaZeroR) 
-                + (b_orbit[n] * deltaZeroI_sqr + b_orbit[ni] * deltaZeroR_sqr) 
-                + (c_orbit[n] * deltaZeroI_cub + c_orbit[ni] * deltaZeroR_cub);
-
-            //D_n = Y_n - X_n
-            //Y_n = D_n + X_n
-            y_orbit[n] = delta_orbit[n] + x_orbit[n];
-            y_orbit[ni] = delta_orbit[ni] + x_orbit[ni];
-        }
-
-        free(a_orbit);
-        free(b_orbit);
-        free(c_orbit);
-        free(delta_orbit);
-
-        int iteration = 0;
-        for (size_t i = 0; i < maxIterations; i++)
-        {
-            //if (debugPrint) printf("it: %d, y orbit r: %lf, y orbit i: %lf\n", i, y_orbit[i + 2], y_orbit[i * 2 + 1]);
-            iteration = i;
-            
-            if (y_orbit[(i + 1) * 2] * y_orbit[(i + 1) * 2] + y_orbit[(i + 1) * 2 + 1] * y_orbit[(i + 1) * 2 + 1] >= 4) {    
-                break;
-            }
-        }
-
-        if (debugPrint) printf("paint pixel %d with iteration %d\n", k, iteration);
-        iterationInfo[k] = iteration;
-
-        free(y_orbit);
-*/
-
-
-void calculateOrbit(long double* x_n) {
+void calculateOrbit(double* x_n) {
 
     for (size_t i = 0; i < maxIterations; i++)
     {
         x_n[i * 2] = 0;
         x_n[i * 2 + 1] = 0;
     }
-    
 
-    long double cartesianX = 0;
-    long double cartesianY = 0;
-
-    long double cr = cartesianX / (baseZoom * zoomfactor) + xOffset;
-    long double ci = cartesianY / (baseZoom * zoomfactor) + yOffset;
+    long double cr = xOffset;
+    long double ci = yOffset;
 
     long double zr = 0.0;
     long double zi = 0.0;
 
     int iteration = 0;
 
-    while (iteration < maxIterations) //(zr * zr + zi * zi) < 4 &&  weglassen, weil punkt y evtl. die daten braucht
+    while (iteration < maxIterations)
     {
-        //z = z^2 + c
-        long double temp_zr = zr * zr - zi * zi;
-        zi = 2 * zr * zi;
-        zr = temp_zr;
-        zr += cr;
-        zi += ci;
-
-        x_n[iteration * 2] = zr;
+        x_n[iteration * 2]     = zr;
         x_n[iteration * 2 + 1] = zi;
 
+        // z(n+1) = z(n)^2 + c
+        long double temp_zr = zr * zr - zi * zi + cr;
+        zi = 2 * zr * zi + ci;
+        zr = temp_zr;
+
         iteration++;
+
+        if (zr*zr + zi*zi > 4.0) break;  // stop if reference escapes
     }
     x_orbitIterations = iteration;
-
-    /*
-    for (size_t i = 0; i < x_orbitIterations; i++)
-    {
-        printf("C_%d: %Lf + %Lfi\n", i, x_n[i*2], x_n[i*2+1]);
-    }
-    */
 }
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
