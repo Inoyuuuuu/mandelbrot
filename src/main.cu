@@ -38,6 +38,7 @@ __managed__ int height;
 __managed__ size_t pixelAmount;
 bool isBusy = false;
 int* iterationInfo;
+bool isDebugMode = true;
 
 //cuda
 dim3 threads_per_block(32, 32);
@@ -135,7 +136,7 @@ int main(int argc, char *argv[]) {
                 
                 cudaRenderImage(renderer);
                 
-                cout << "zoom: " << zoomfactor << "\n";
+                cout << "zoom: " << zoomfactor << " | x: " << mandel_x << " | y: " << mandel_y << "\n";
             }
         }
     }
@@ -166,39 +167,52 @@ void renderMandelbrotCPU_deepZoom(int* iterationInfo) {
 
     for (size_t k = 0; k < pixelAmount; k++)
     {
+
         long double x = k % width;
         long double y = k / width;
 
-        long double deltaCr = (x - width * 0.5) / (baseZoom * zoomfactor);
-        long double deltaCi = (y - height * 0.5) / (baseZoom * zoomfactor);
+        long double d_cr = (x - width * 0.5) / (baseZoom * zoomfactor);
+        long double d_ci = (y - height * 0.5) / (baseZoom * zoomfactor);
 
-        long double zr = 0;
-        long double zi = 0;
+        double d_zr = 0;
+        double d_zi = 0;
 
-        int i = 0;
-        while (i < x_orbitIterations)
-        {
-            // δz(n+1) = 2·z₀(n)·δz(n) + δz(n)² + δc
-            long double temp_zr = 2*(x_orbit[i*2]*zr - x_orbit[i*2+1]*zi)
-                                + (zr*zr - zi*zi)
-                                + deltaCr;
-            zi = 2*(x_orbit[i*2]*zi + x_orbit[i*2+1]*zr)
-               + (2*zr*zi)
-               + deltaCi;
-            zr = temp_zr;
+        int iteration = 0;
+        int ref_iteration = 0;
 
-            // Escape test on full point Z(n) + δz(n)
-            long double full_zr = x_orbit[i*2] + zr;
-            long double full_zi = x_orbit[i*2+1] + zi;
-            if (full_zr*full_zr + full_zi*full_zi > 4.0) break;
+        while (iteration < x_orbitIterations) {
 
-            i++;
+            
+            double ref_zr = x_orbit[ref_iteration * 2];
+            double ref_zi = x_orbit[ref_iteration * 2 + 1];
+
+            //dz = 2 * dz * x_orbit[ref_iteration] + dz * dz + dc;
+            double temp_zr = 2*(ref_zr*d_zr - ref_zi*d_zi) + (d_zr*d_zr - d_zi*d_zi) + d_cr;
+            d_zi = 2*(ref_zr*d_zi + ref_zi*d_zr) + (2*d_zr*d_zi) + d_ci;
+            d_zr = temp_zr;
+            ref_iteration++;
+
+            double zr = x_orbit[ref_iteration*2] + d_zr;
+            double zi = x_orbit[ref_iteration*2+1] + d_zi;
+
+            double z_squared = zr*zr + zi*zi;
+            double dz_squared = d_zr*d_zr + d_zi*d_zi;
+
+            if (z_squared > 4.0) break; // |z| > 2 == z² > 2²
+
+            if (z_squared < dz_squared || ref_iteration == x_orbitIterations) {
+                
+                d_zr = zr;
+                d_zi = zi;
+                ref_iteration = 0;
+            }
+            iteration++;
         }
 
-        iterationInfo[k] = i;
+        iterationInfo[k] = iteration;
+
     }
 }
-
 
 void calculateOrbit(double* x_n) {
 
@@ -227,8 +241,6 @@ void calculateOrbit(double* x_n) {
         zr = temp_zr;
 
         iteration++;
-
-        if (zr*zr + zi*zi > 4.0) break;  // stop if reference escapes
     }
     x_orbitIterations = iteration;
 }
@@ -241,9 +253,15 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     {
         int x = i % width;        
         int y = i / width;
-        
-        color = calcPixelColor(iterationInfo[i]);
-        SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
+
+        if (isDebugMode && std::abs(x - width/2) < 2 && std::abs(y - height/2) < 2) {
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+
+        } else {
+            color = calcPixelColor(iterationInfo[i]);
+            SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
+        }
+
         SDL_RenderPoint(renderer, x, y);
     }
     isBusy = false;
