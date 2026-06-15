@@ -2,6 +2,7 @@
 #include <array>
 #include <algorithm>
 #include <math.h>
+#include <cstdint>
 #include <iostream>
 
 using namespace std;
