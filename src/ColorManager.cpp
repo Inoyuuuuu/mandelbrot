@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <math.h>
 #include <iostream>
+#include <cstdint>
 
 using namespace std;
 

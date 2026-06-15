@@ -5,6 +5,7 @@
 #include <array>
 #include <filesystem>
 #include <string>
+#include <cstdint>
 #include "ColorManager.cpp"
 
 using namespace std;
@@ -77,8 +78,6 @@ int main(int argc, char *argv[]) {
         width = 300;
         height = 300;
     }
-
-    cout << width << " | " << height;
 
     //init
     if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
