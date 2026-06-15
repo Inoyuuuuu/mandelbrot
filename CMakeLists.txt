@@ -1,17 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
-project(mandelbrot LANGUAGES CUDA CXX)
-
-include(CheckLanguage)
-check_language(CUDA)
+project(mandelbrot LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CUDA_ARCHITECTURES 86)
-set(CMAKE_CUDA_STANDARD 23)
 
 add_subdirectory(external/SDL)
 
 add_executable(mandelbrot
-    src/main.cu
+    src/main.cpp
     src/ColorManager.cpp
 )
 
