@@ -1,2 +1,0 @@
-output folder ppm image renders
-press "p" while on the sdl window to render a ppm image of the current mandelbrot view

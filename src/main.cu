@@ -5,44 +5,44 @@
 #include <array>
 #include <filesystem>
 #include <string>
-#include "ColorConverter.cpp"
+#include "ColorManager.cpp"
 
 using namespace std;
 
-void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int pixelAmount);
-void renderMandelbrotCPU_deepZoom(int* iterationInfo);
-void calculateOrbit(double* x_n);
+__global__ void renderMandelbrotGPU_deepZoom(double* refOrbit, int* iterationInfo, int windowWidth, int windowHeight, int maxRefOrbitIterations, int zoomBase, double zoomFactor);
+void calculateOrbit(double* refOrbit);
 void cudaRenderImage(SDL_Renderer* renderer);
-ofstream createPPM(int width, int height);
-array<uint8_t, 4> calcPixelColor(int iteration);
-array<uint8_t, 4> calcPixelColorLCH(int iteration);
+std::ofstream createPPM(int width, int height);
 
 //mandelbrot
-__managed__ int maxIterations = 1000;
-int baseZoom = 100;
-double zoomfactor = 1.0;
+int maxIterations = 1000;
+int zoomBase = 100;
+double zoomFactor = 1.0;
 long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
 long double yOffset = 0;
 
 //arbitrary precision
 double orbit_r;
 double orbit_i;
-double* x_orbit;
-__managed__ int x_orbitIterations = 0;
+double* refOrbit;
+int maxRefOrbitIterations = 0;
 
 //window and program
-__managed__ int width;
-__managed__ int height;
-__managed__ size_t pixelAmount;
+int width;
+int height;
+size_t pixelAmount;
 bool isBusy = false;
 int* iterationInfo;
 bool isDebugMode = true;
+int colorMode = 3;
 
 //cuda
 dim3 threads_per_block(32, 32);
 dim3 blocks(1, 1);
+
+ColorManager* cm = new ColorManager();
 
 int main(int argc, char *argv[]) {
     try
@@ -68,9 +68,9 @@ int main(int argc, char *argv[]) {
     pixelAmount = width * height;
 
     //cuda init
-    cudaMallocManaged(&x_orbit, sizeof(long double) * maxIterations);
-
+    cudaMallocManaged(&refOrbit, sizeof(double) * 2 * (maxIterations + 1));
     cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
+
     dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
     blocks = tmp_blocks;
 
@@ -81,66 +81,107 @@ int main(int argc, char *argv[]) {
     cout << "Mandelbrot calculations & render done! Finished with " << pixelAmount << " pixels!\n";
 
     bool running = true;
+    bool shiftPressed = false;
+
+    bool isMouseEvent = false;
+    bool isKeyDownEvent = false;
+    bool isKeyUpEvent = false;
+
     SDL_Event event;
     while (running) {
 
         while (SDL_PollEvent(&event)) {
+            isMouseEvent = event.type == SDL_EVENT_MOUSE_WHEEL;
+            isKeyDownEvent = event.type == SDL_EVENT_KEY_DOWN;
+            isKeyUpEvent = event.type == SDL_EVENT_KEY_UP;
+            
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             }
             
-            if (event.type == SDL_EVENT_KEY_DOWN) {
+            if (isKeyDownEvent) {
                 if (event.key.key == SDLK_ESCAPE) {
                     running = false;
                 } else if(event.key.key == SDLK_P && !isBusy) {
                     drawToPPMImage(pixelAmount);
                 } else if (event.key.key == SDLK_F && !isBusy) {
-                    zoomfactor = -zoomfactor;
+                    zoomFactor = -zoomFactor;
                     cudaRenderImage(renderer);
 
                 } else if (event.key.key == SDLK_R && !isBusy) {
                     xOffset = -0.42;
                     yOffset = 0.0;
-                    zoomfactor = 1.0;
+                    zoomFactor = 1.0;
                     cudaRenderImage(renderer);
+                } else if (event.key.key == SDLK_LSHIFT) {
+                    shiftPressed = true;
                 }
             }
 
-            if ((event.type == SDL_EVENT_MOUSE_WHEEL || event.type == SDL_EVENT_KEY_DOWN)&& !isBusy) {
-                float x, y;
-                double mandel_x, mandel_y;
+            //vertical/horizontal movement via arrow keys
+            if (isKeyDownEvent && !isBusy) {
+                long double x = 0;
+                long double y = 0;
 
+                switch(event.key.key) {
+                    case SDLK_LEFT: x += -50; break;
+                    case SDLK_RIGHT: x += 50; break;
+                    case SDLK_UP: y += -50; break; //winow y is top down
+                    case SDLK_DOWN: y += 50; break;
+                    default: continue;
+                }
+
+                x /= (zoomBase * zoomFactor);
+                y /= (zoomBase * zoomFactor);
+                xOffset += x;
+                yOffset += y;
+
+                cudaRenderImage(renderer);
+                cout << "zoom: " << zoomFactor << " | x: " << xOffset << " | y: " << yOffset << "\n";
+            }
+
+            if (isKeyUpEvent) {
+                if (event.key.key == SDLK_LSHIFT) {
+                    shiftPressed = false;
+                }
+            }
+
+            //zoom via mouse/plus and minus
+            if ((isMouseEvent || isKeyDownEvent) && !isBusy) {
+                float x, y;
                 Uint32 buttons = SDL_GetMouseState(&x, &y);
-                bool isPositiveZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y > 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_PLUS);
-                bool isNegativeZoom = (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y < 0) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_MINUS);
+                bool isPositiveZoom = (isMouseEvent && event.wheel.y > 0) || (isKeyDownEvent && event.key.key == SDLK_PLUS);
+                bool isNegativeZoom = (isMouseEvent && event.wheel.y < 0) || (isKeyDownEvent && event.key.key == SDLK_MINUS);
                 
-                mandel_x = (x - width / 2);    //translate to cartesian position
+                long double mandel_x, mandel_y;
+                mandel_x = (x - width / 2);    //translate mouse x y to cartesian position in mandel coordinate system
                 mandel_y = (y - height / 2);
-                
-                mandel_x /= (baseZoom * zoomfactor);
-                mandel_y /= (baseZoom * zoomfactor);
+                mandel_x /= (zoomBase * zoomFactor);
+                mandel_y /= (zoomBase * zoomFactor);
 
                 if (isPositiveZoom)
                 {
-                    zoomfactor *= 2;
+                    zoomFactor *= 2;
                 } else if (isNegativeZoom){
                     mandel_x = -mandel_x;
                     mandel_y = -mandel_y;
-                    zoomfactor /= 2;
+                    zoomFactor /= 2;
                 } else {
                     continue;
                 }
 
-                xOffset += mandel_x;
-                yOffset += mandel_y;
-                
+                if (!shiftPressed) {
+                    xOffset += mandel_x;
+                    yOffset += mandel_y;
+                }
+
                 cudaRenderImage(renderer);
-                
-                cout << "zoom: " << zoomfactor << " | x: " << mandel_x << " | y: " << mandel_y << "\n";
+                cout << "zoom: " << zoomFactor << " | x: " << xOffset << " | y: " << yOffset << "\n";
             }
         }
     }
 
+    cudaFree(refOrbit);
     cudaFree(iterationInfo);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
@@ -153,73 +194,69 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    calculateOrbit(x_orbit);
+    calculateOrbit(refOrbit);
     
-    //renderMandelbrot<<<blocks, threads_per_block>>>(iterationInfo);
-    //cudaDeviceSynchronize();
-    renderMandelbrotCPU_deepZoom(iterationInfo);
+    renderMandelbrotGPU_deepZoom<<<blocks, threads_per_block>>>(refOrbit, iterationInfo, width, height, maxRefOrbitIterations, zoomBase, zoomFactor);
+    cudaDeviceSynchronize();
     
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
 }
 
-void renderMandelbrotCPU_deepZoom(int* iterationInfo) {
+__global__ void renderMandelbrotGPU_deepZoom(double* refOrbit, int* iterationInfo, int windowWidth, int windowHeight, int maxRefOrbitIterations, int zoomBase, double zoomFactor) {
 
-    for (size_t k = 0; k < pixelAmount; k++)
-    {
+    int x = blockDim.x * blockIdx.x + threadIdx.x;        
+    int y = blockDim.y * blockIdx.y + threadIdx.y;
 
-        long double x = k % width;
-        long double y = k / width;
+    if (x >= windowWidth || y >= windowHeight) return;
 
-        long double d_cr = (x - width * 0.5) / (baseZoom * zoomfactor);
-        long double d_ci = (y - height * 0.5) / (baseZoom * zoomfactor);
+    double d_cr = (x - windowWidth * 0.5) / (zoomBase * zoomFactor);
+    double d_ci = (y - windowHeight * 0.5) / (zoomBase * zoomFactor);
 
-        double d_zr = 0;
-        double d_zi = 0;
+    double d_zr = 0;
+    double d_zi = 0;
 
-        int iteration = 0;
-        int ref_iteration = 0;
+    int iteration = 0;
+    int ref_iteration = 0;
 
-        while (iteration < x_orbitIterations) {
+    while (iteration < maxRefOrbitIterations) {
+        
+        double ref_zr = refOrbit[ref_iteration * 2];
+        double ref_zi = refOrbit[ref_iteration * 2 + 1];
 
+        //dz = 2 * dz * x_orbit[ref_iteration] + dz * dz + dc;
+        double temp_zr = 2*(ref_zr*d_zr - ref_zi*d_zi) + (d_zr*d_zr - d_zi*d_zi) + d_cr;
+        d_zi = 2*(ref_zr*d_zi + ref_zi*d_zr) + (2*d_zr*d_zi) + d_ci;
+        d_zr = temp_zr;
+        ref_iteration++;
+
+        double zr = refOrbit[ref_iteration*2] + d_zr;
+        double zi = refOrbit[ref_iteration*2+1] + d_zi;
+
+        double z_squared = zr*zr + zi*zi;
+        double dz_squared = d_zr*d_zr + d_zi*d_zi;
+
+        if (z_squared > 4.0) break; // |z| > 2 == z² > 2²
+
+        if (z_squared < dz_squared || ref_iteration == maxRefOrbitIterations) {
             
-            double ref_zr = x_orbit[ref_iteration * 2];
-            double ref_zi = x_orbit[ref_iteration * 2 + 1];
-
-            //dz = 2 * dz * x_orbit[ref_iteration] + dz * dz + dc;
-            double temp_zr = 2*(ref_zr*d_zr - ref_zi*d_zi) + (d_zr*d_zr - d_zi*d_zi) + d_cr;
-            d_zi = 2*(ref_zr*d_zi + ref_zi*d_zr) + (2*d_zr*d_zi) + d_ci;
-            d_zr = temp_zr;
-            ref_iteration++;
-
-            double zr = x_orbit[ref_iteration*2] + d_zr;
-            double zi = x_orbit[ref_iteration*2+1] + d_zi;
-
-            double z_squared = zr*zr + zi*zi;
-            double dz_squared = d_zr*d_zr + d_zi*d_zi;
-
-            if (z_squared > 4.0) break; // |z| > 2 == z² > 2²
-
-            if (z_squared < dz_squared || ref_iteration == x_orbitIterations) {
-                
-                d_zr = zr;
-                d_zi = zi;
-                ref_iteration = 0;
-            }
-            iteration++;
+            d_zr = zr;
+            d_zi = zi;
+            ref_iteration = 0;
         }
-
-        iterationInfo[k] = iteration;
-
+        iteration++;
     }
+
+    iterationInfo[windowWidth * y + x] = iteration;
+
 }
 
-void calculateOrbit(double* x_n) {
+void calculateOrbit(double* refOrbit) {
 
     for (size_t i = 0; i < maxIterations; i++)
     {
-        x_n[i * 2] = 0;
-        x_n[i * 2 + 1] = 0;
+        refOrbit[i * 2] = 0;
+        refOrbit[i * 2 + 1] = 0;
     }
 
     long double cr = xOffset;
@@ -232,8 +269,8 @@ void calculateOrbit(double* x_n) {
 
     while (iteration < maxIterations)
     {
-        x_n[iteration * 2]     = zr;
-        x_n[iteration * 2 + 1] = zi;
+        refOrbit[iteration * 2] = (double)zr;
+        refOrbit[iteration * 2 + 1] = (double)zi;
 
         // z(n+1) = z(n)^2 + c
         long double temp_zr = zr * zr - zi * zi + cr;
@@ -242,7 +279,7 @@ void calculateOrbit(double* x_n) {
 
         iteration++;
     }
-    x_orbitIterations = iteration;
+    maxRefOrbitIterations = iteration;
 }
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
@@ -258,7 +295,7 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
             SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
 
         } else {
-            color = calcPixelColor(iterationInfo[i]);
+            color = (*cm).colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
             SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         }
 
@@ -274,181 +311,27 @@ void drawToPPMImage(int pixelAmount) {
     
     for (size_t i = 0; i < pixelAmount; i++)
     {
-        color = calcPixelColor(iterationInfo[i]);
+        color = (*cm).colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
         image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
     }
     isBusy = false;
-
 }
 
-ofstream createPPM(int width, int height) {
-    string path = "renders/mandelPic.ppm";
+std::ofstream createPPM(int width, int height) {
+    std::filesystem::create_directories("renders");
+
+    std::string outPath = "renders/mandelPic.ppm";
     int counter = 2;
-    while (filesystem::exists(path)) {
-        path = "renders/mandelPic" + to_string(counter) + ".ppm";
-        counter++;
+
+    while (std::filesystem::exists(outPath)) {
+        outPath = "renders/mandelPic" + std::to_string(counter++) + ".ppm";
     }
-    ofstream image(path);
-    image << "P3\n" << width << " " << height << "\n" << "255\n";
+
+    std::ofstream image(outPath);
+    if (!image.is_open()) {
+        throw std::runtime_error("Failed to open file: " + outPath);
+    }
+
+    image << "P3\n" << width << " " << height << "\n255\n";
     return image;
-}
-
-array<uint8_t, 4> calcPixelColorLCH(int iteration) {
-    array<uint8_t, 4> color = {0, 0, 0, 255};
-    if (iteration == maxIterations || iteration == maxIterations - 1) return color;
-
-    const double pi = 3.141592;
-    double s = (double)iteration/maxIterations;
-    double v = 1.0 - powf(cos(pi * s), 2.0);
-    double L = 75 - (75 * v);
-    double C = 28 + (75 - (75 * v));
-    double h = fmod(powf(360 * s, 1.5f), 360);
-    array<double, 3> rgb = ColorConverter::lchToRgb(L, C, h);
-
-    setColorValues(color, rgb[0], rgb[1], rgb[2], 255);
-
-    return color;
-}
-
-array<uint8_t, 4> calcPixelColor(int iteration) {
-    array<uint8_t, 4> color = {0, 0, 0, 255};
-
-    if (iteration == maxIterations || iteration == maxIterations - 1) return color;
-
-    int gradientSteps = 40;
-    int mappedIteration = round(((double)iteration / maxIterations) * (gradientSteps - 1));
-    
-        switch (mappedIteration)
-    {
-    case 0:
-        setColorValues(color, 255, 0, 110, 255);
-        return color;
-    case 1:
-        setColorValues(color, 254, 11, 97, 255);
-        return color;
-    case 2:
-        setColorValues(color, 254, 22, 84, 255);
-        return color;
-    case 3:
-        setColorValues(color, 253, 33, 70, 255);
-        return color;
-    case 4:
-        setColorValues(color, 253, 44, 57, 255);
-        return color;
-    case 5:
-        setColorValues(color, 252, 55, 44, 255);
-        return color;
-    case 6:
-        setColorValues(color, 252, 66, 31, 255);
-        return color;
-    case 7:
-        setColorValues(color, 251, 77, 18, 255);
-        return color;
-    case 8:
-        setColorValues(color, 251, 89, 7, 255);
-        return color;
-    case 9:
-        setColorValues(color, 252, 102, 8, 255);
-        return color;
-    case 10:
-        setColorValues(color, 252, 115, 8, 255);
-        return color;
-    case 11:
-        setColorValues(color, 253, 129, 9, 255);
-        return color;
-    case 12:
-        setColorValues(color, 253, 142, 9, 255);
-        return color;
-    case 13:
-        setColorValues(color, 254, 155, 10, 255);
-        return color;
-    case 14:
-        setColorValues(color, 254, 169, 10, 255);
-        return color;
-    case 15:
-        setColorValues(color, 255, 182, 11, 255);
-        return color;
-    case 16:
-        setColorValues(color, 249, 183, 23, 255);
-        return color;
-    case 17:
-        setColorValues(color, 233, 166, 51, 255);
-        return color;
-    case 18:
-        setColorValues(color, 217, 149, 80, 255);
-        return color;
-    case 19:
-        setColorValues(color, 201, 132, 109, 255);
-        return color;
-    case 20:
-        setColorValues(color, 185, 114, 138, 255);
-        return color;
-    case 21:
-        setColorValues(color, 169, 97, 167, 255);
-        return color;
-    case 22:
-        setColorValues(color, 153, 80, 196, 255);
-        return color;
-    case 23:
-        setColorValues(color, 137, 63, 224, 255);
-        return color;
-    case 24:
-        setColorValues(color, 125, 62, 237, 255);
-        return color;
-    case 25:
-        setColorValues(color, 116, 72, 240, 255);
-        return color;
-    case 26:
-        setColorValues(color, 107, 82, 242, 255);
-        return color;
-    case 27:
-        setColorValues(color, 97, 92, 245, 255);
-        return color;
-    case 28:
-        setColorValues(color, 88, 102, 247, 255);
-        return color;
-    case 29:
-        setColorValues(color, 79, 112, 250, 255);
-        return color;
-    case 30:
-        setColorValues(color, 69, 122, 252, 255);
-        return color;
-    case 31:
-        setColorValues(color, 60, 132, 255, 255);
-        return color;
-    case 32:
-        setColorValues(color, 53, 146, 246, 255);
-        return color;
-    case 33:
-        setColorValues(color, 46, 162, 234, 255);
-        return color;
-    case 34:
-        setColorValues(color, 39, 177, 223, 255);
-        return color;
-    case 35:
-        setColorValues(color, 33, 193, 211, 255);
-        return color;
-    case 36:
-        setColorValues(color, 26, 208, 200, 255);
-        return color;
-    case 37:
-        setColorValues(color, 19, 224, 188, 255);
-        return color;
-    case 38:
-        setColorValues(color, 13, 239, 177, 255);
-        return color;
-    case 39:
-        setColorValues(color, 6, 255, 165, 255);
-        return color;
-    default:
-        setColorValues(color, 0, 0, 0, 255);
-        return color;
-    }
-}
-
-void setColorValues(array<uint8_t, 4> &c, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-    c[0] = r;
-    c[1] = g;
-    c[2] = b;
-    c[3] = a;
 }

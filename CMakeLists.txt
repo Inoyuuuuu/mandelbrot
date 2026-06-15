@@ -10,6 +10,10 @@ set(CMAKE_CUDA_STANDARD 23)
 
 add_subdirectory(external/SDL)
 
-add_executable(mandelbrot src/main.cu)
+add_executable(mandelbrot
+    src/main.cu
+    src/ColorManager.cpp
+)
+
 set_target_properties(mandelbrot PROPERTIES LINKER_LANGUAGE CXX)
 target_link_libraries(mandelbrot PRIVATE SDL3::SDL3)
