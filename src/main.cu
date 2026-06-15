@@ -11,7 +11,6 @@ using namespace std;
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int ppmWidth, int ppmHeight);
-void initCudaGridSize();
 void renderMandelbrotCPU(int* iterationInfo, int windowWidth, int windowHeight, 
     int maxIterations, int zoomBase, double zoomFactor, double xOffset, double yOffset);
 void cudaRenderImage(SDL_Renderer* renderer);
@@ -26,7 +25,6 @@ double yOffset = 0;
 //window and program
 int width;
 int height;
-size_t pixelAmount;
 bool isBusy = false;
 int* iterationInfo;
 
@@ -78,7 +76,7 @@ int main(int argc, char *argv[]) {
     if (!window) return -1;
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer) return -1;
-    pixelAmount = width * height;
+    size_t pixelAmount = width * height;
 
     iterationInfo = new int[pixelAmount];
     cout << "Launching mandelbrot calculations!\n";
@@ -193,7 +191,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    cudaFree(iterationInfo);
+    delete[] iterationInfo;
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -205,21 +203,20 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    if (isHighResExportActive) initCudaGridSize();
-
     renderMandelbrotCPU(iterationInfo, width, height, maxIterations, zoomBase, zoomFactor, xOffset, yOffset);
     
-    drawToSDLWindow(renderer, pixelAmount);
+    drawToSDLWindow(renderer, width * height);
     SDL_RenderPresent(renderer);
 }
 
 void renderMandelbrotCPU(int* iterationInfo, int windowWidth, int windowHeight, 
     int maxIterations, int zoomBase, double zoomFactor, double xOffset, double yOffset) {
 
+    size_t pixelAmount = windowWidth * windowHeight;
     for (size_t k = 0; k < pixelAmount; k++)
     {
         int x = k % windowWidth;
-        int y = k / windowHeight;
+        int y = k / windowWidth;
 
         if (x >= windowWidth || y >= windowHeight) return;
 
@@ -304,9 +301,9 @@ void drawToPPMImage(int width, int height) {
     int ppmPixelAmount = ppmWidth * ppmHeight;
 
     if (isHighResExportActive) {
-        int* ppmIterationInfo;
-
         double ppmZoomFactor = zoomFactor * resolutionMultiplier;
+        int* ppmIterationInfo = new int[ppmPixelAmount];
+
         renderMandelbrotCPU(ppmIterationInfo, ppmWidth, ppmHeight, maxIterations, zoomBase, ppmZoomFactor, xOffset, yOffset);
 
         for (size_t i = 0; i < ppmPixelAmount; i++)
@@ -315,7 +312,7 @@ void drawToPPMImage(int width, int height) {
             image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
         }
 
-        cudaFree(ppmIterationInfo);
+        delete[] ppmIterationInfo;
 
     } else {
         for (size_t i = 0; i < ppmPixelAmount; i++)
