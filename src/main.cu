@@ -12,7 +12,7 @@ using namespace std;
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int ppmWidth, int ppmHeight);
 void initCudaGridSize();
-__global__ void renderMandelbrotGPU(int* iterationInfo, int windowWidth, int windowHeight, 
+void renderMandelbrotCPU(int* iterationInfo, int windowWidth, int windowHeight, 
     int maxIterations, int zoomBase, double zoomFactor, double xOffset, double yOffset);
 void cudaRenderImage(SDL_Renderer* renderer);
 
@@ -35,10 +35,6 @@ bool isDebugMode = false; //TODO: deactivate
 int colorMode = 0;
 bool isHighResExportActive = false;
 float resolutionMultiplier = 1.0;
-
-//cuda
-dim3 block(16, 16);
-dim3 grid(1, 1);
 
 ColorManager* cm = new ColorManager();
 
@@ -84,11 +80,8 @@ int main(int argc, char *argv[]) {
     if (!renderer) return -1;
     pixelAmount = width * height;
 
-    //cuda init
-    cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
-    initCudaGridSize();
-
-    cout << "Launching mandelbrot calculations with " << grid.x << "x" << grid.y << " blocks and " << block.x << "x" << block.y << " threads!\n";
+    iterationInfo = new int[pixelAmount];
+    cout << "Launching mandelbrot calculations!\n";
     
     cudaRenderImage(renderer);
 
@@ -139,8 +132,8 @@ int main(int argc, char *argv[]) {
 
             //vertical/horizontal movement via arrow keys
             if (isKeyDownEvent && !isBusy) {
-                long double x = 0;
-                long double y = 0;
+                double x = 0;
+                double y = 0;
 
                 switch(event.key.key) {
                     case SDLK_LEFT: x += -100; break;
@@ -172,7 +165,7 @@ int main(int argc, char *argv[]) {
                 bool isPositiveZoom = (isMouseEvent && event.wheel.y > 0) || (isKeyDownEvent && event.key.key == SDLK_PLUS);
                 bool isNegativeZoom = (isMouseEvent && event.wheel.y < 0) || (isKeyDownEvent && event.key.key == SDLK_MINUS);
                 
-                long double mandel_x, mandel_y;
+                double mandel_x, mandel_y;
                 mandel_x = (x - width / 2);    //translate mouse x y to cartesian position in mandel coordinate system
                 mandel_y = (y - height / 2);
                 mandel_x /= (zoomBase * zoomFactor);
@@ -208,54 +201,52 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void initCudaGridSize() {
-    grid = dim3((width  + block.x - 1) / block.x, (height + block.y - 1) / block.y);
-}
-
 void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
     if (isHighResExportActive) initCudaGridSize();
 
-    renderMandelbrotGPU<<<grid, block>>>(iterationInfo, width, height, maxIterations, zoomBase, zoomFactor, xOffset, yOffset);
-    cudaDeviceSynchronize();
+    renderMandelbrotCPU(iterationInfo, width, height, maxIterations, zoomBase, zoomFactor, xOffset, yOffset);
     
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
 }
 
-__global__ void renderMandelbrotGPU(int* iterationInfo, int windowWidth, int windowHeight, 
+void renderMandelbrotCPU(int* iterationInfo, int windowWidth, int windowHeight, 
     int maxIterations, int zoomBase, double zoomFactor, double xOffset, double yOffset) {
 
-    int x = blockDim.x * blockIdx.x + threadIdx.x;        
-    int y = blockDim.y * blockIdx.y + threadIdx.y;
-
-    if (x >= windowWidth || y >= windowHeight) return;
-
-    double cartesianX = (x - (windowWidth / 2));
-    double cartesianY = (y - (windowHeight / 2));
-
-    double cr = cartesianX / (zoomBase * zoomFactor) + xOffset;
-    double ci = cartesianY / (zoomBase * zoomFactor) + yOffset;
-
-    double zr = 0.0;
-    double zi = 0.0;
-
-    int iteration = 0;
-
-    while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
+    for (size_t k = 0; k < pixelAmount; k++)
     {
-        //z = z^2 + c
-        double temp_zr = zr * zr - zi * zi;
-        zi = 2 * zr * zi;
-        zr = temp_zr;
-        zr += cr;
-        zi += ci;
+        int x = k % windowWidth;
+        int y = k / windowHeight;
 
-        iteration++;            
+        if (x >= windowWidth || y >= windowHeight) return;
+
+        double cartesianX = (x - (windowWidth / 2));
+        double cartesianY = (y - (windowHeight / 2));
+
+        double cr = cartesianX / (zoomBase * zoomFactor) + xOffset;
+        double ci = cartesianY / (zoomBase * zoomFactor) + yOffset;
+
+        double zr = 0.0;
+        double zi = 0.0;
+
+        int iteration = 0;
+
+        while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
+        {
+            //z = z^2 + c
+            double temp_zr = zr * zr - zi * zi;
+            zi = 2 * zr * zi;
+            zr = temp_zr;
+            zr += cr;
+            zi += ci;
+
+            iteration++;            
+        }
+        iterationInfo[windowWidth * y + x] = iteration;
     }
-    iterationInfo[windowWidth * y + x] = iteration;
 }
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
@@ -314,12 +305,9 @@ void drawToPPMImage(int width, int height) {
 
     if (isHighResExportActive) {
         int* ppmIterationInfo;
-        cudaMallocManaged(&ppmIterationInfo, sizeof(int) * ppmPixelAmount);
 
-        grid = dim3((ppmWidth  + block.x - 1) / block.x, (ppmHeight + block.y - 1) / block.y);
         double ppmZoomFactor = zoomFactor * resolutionMultiplier;
-        renderMandelbrotGPU<<<grid, block>>>(ppmIterationInfo, ppmWidth, ppmHeight, maxIterations, zoomBase, ppmZoomFactor, xOffset, yOffset);
-        cudaDeviceSynchronize();
+        renderMandelbrotCPU(ppmIterationInfo, ppmWidth, ppmHeight, maxIterations, zoomBase, ppmZoomFactor, xOffset, yOffset);
 
         for (size_t i = 0; i < ppmPixelAmount; i++)
         {
