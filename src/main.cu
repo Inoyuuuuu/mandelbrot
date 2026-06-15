@@ -10,11 +10,11 @@
 using namespace std;
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
-void drawToPPMImage(int pixelAmount);
+void drawToPPMImage(int ppmWidth, int ppmHeight);
+void initCudaGridSize();
 __global__ void renderMandelbrotGPU_deepZoom(double* refOrbit, int* iterationInfo, int windowWidth, int windowHeight, int maxRefOrbitIterations, int zoomBase, double zoomFactor);
 void calculateOrbit(double* refOrbit);
 void cudaRenderImage(SDL_Renderer* renderer);
-std::ofstream createPPM(int width, int height);
 
 //mandelbrot
 int maxIterations = 1000;
@@ -33,12 +33,16 @@ int height;
 size_t pixelAmount;
 bool isBusy = false;
 int* iterationInfo;
+
+//programm settings
 bool isDebugMode = false; //TODO: deactivate
 int colorMode = 0;
+bool isHighResExportActive = false;
+float resolutionMultiplier = 1.0;
 
 //cuda
-dim3 threads_per_block(32, 32);
-dim3 blocks(1, 1);
+dim3 block(16, 16);
+dim3 grid(1, 1);
 
 ColorManager* cm = new ColorManager();
 
@@ -58,6 +62,10 @@ int main(int argc, char *argv[]) {
                 } else if (arg.starts_with("--db"))
                 {
                     isDebugMode = true;
+                } else if (arg.starts_with("--eRes:"))
+                {
+                    resolutionMultiplier = stof(arg.erase(0,7));
+                    isHighResExportActive = true;
                 }
             }
         }
@@ -70,6 +78,8 @@ int main(int argc, char *argv[]) {
         height = 300;
     }
 
+    cout << width << " | " << height;
+
     //init
     if (!SDL_Init(SDL_INIT_VIDEO)) return -1;
     SDL_Window* window = SDL_CreateWindow("SDL3 Window", width, height, 0);
@@ -81,11 +91,9 @@ int main(int argc, char *argv[]) {
     //cuda init
     cudaMallocManaged(&refOrbit, sizeof(double) * 2 * (maxIterations + 1));
     cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
+    initCudaGridSize();
 
-    dim3 tmp_blocks((width-1)/threads_per_block.x + 1, (height-1)/threads_per_block.y + 1);
-    blocks = tmp_blocks;
-
-    cout << "Launching mandelbrot calculations with " << blocks.x << "x" << blocks.y << " blocks and " << threads_per_block.x << "x" << threads_per_block.y << " threads!\n";
+    cout << "Launching mandelbrot calculations with " << grid.x << "x" << grid.y << " blocks and " << block.x << "x" << block.y << " threads!\n";
     
     cudaRenderImage(renderer);
 
@@ -113,8 +121,12 @@ int main(int argc, char *argv[]) {
             if (isKeyDownEvent) {
                 if (event.key.key == SDLK_ESCAPE) {
                     running = false;
-                } else if(event.key.key == SDLK_P && !isBusy) {
-                    drawToPPMImage(pixelAmount);
+
+                } else if(event.key.key == SDLK_P && !isBusy) { //"screenshot"
+                    cout << "rendering screenshot [res: " << resolutionMultiplier << "]...\n";
+                    drawToPPMImage(width, height);
+                    cout << "done!\n";
+
                 } else if (event.key.key == SDLK_F && !isBusy) {
                     zoomFactor = -zoomFactor;
                     cudaRenderImage(renderer);
@@ -124,6 +136,7 @@ int main(int argc, char *argv[]) {
                     yOffset = 0.0;
                     zoomFactor = 1.0;
                     cudaRenderImage(renderer);
+
                 } else if (event.key.key == SDLK_LSHIFT) {
                     shiftPressed = true;
                 }
@@ -135,10 +148,10 @@ int main(int argc, char *argv[]) {
                 long double y = 0;
 
                 switch(event.key.key) {
-                    case SDLK_LEFT: x += -50; break;
-                    case SDLK_RIGHT: x += 50; break;
-                    case SDLK_UP: y += -50; break; //winow y is top down
-                    case SDLK_DOWN: y += 50; break;
+                    case SDLK_LEFT: x += -100; break;
+                    case SDLK_RIGHT: x += 100; break;
+                    case SDLK_UP: y += -100; break; //winow y is top down
+                    case SDLK_DOWN: y += 100; break;
                     default: continue;
                 }
 
@@ -201,13 +214,19 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+void initCudaGridSize() {
+    grid = dim3((width  + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+}
+
 void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
     calculateOrbit(refOrbit);
-    
-    renderMandelbrotGPU_deepZoom<<<blocks, threads_per_block>>>(refOrbit, iterationInfo, width, height, maxRefOrbitIterations, zoomBase, zoomFactor);
+
+    if (isHighResExportActive) initCudaGridSize();
+
+    renderMandelbrotGPU_deepZoom<<<grid, block>>>(refOrbit, iterationInfo, width, height, maxRefOrbitIterations, zoomBase, zoomFactor);
     cudaDeviceSynchronize();
     
     drawToSDLWindow(renderer, pixelAmount);
@@ -315,22 +334,8 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     isBusy = false;
 }
 
-void drawToPPMImage(int pixelAmount) {
-    isBusy = true;
-    ofstream image = createPPM(width, height);
-    array<uint8_t, 4> color;
-    
-    for (size_t i = 0; i < pixelAmount; i++)
-    {
-        color = (*cm).colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
-        image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
-    }
-    isBusy = false;
-}
-
 std::ofstream createPPM(int width, int height) {
     std::filesystem::create_directories("renders");
-
     std::string outPath = "renders/mandelPic.ppm";
     int counter = 2;
 
@@ -345,4 +350,46 @@ std::ofstream createPPM(int width, int height) {
 
     image << "P3\n" << width << " " << height << "\n255\n";
     return image;
+}
+
+void drawToPPMImage(int width, int height) {
+    int ppmWidth = width;
+    int ppmHeight = height;
+    isBusy = true;
+
+    if (isHighResExportActive) {
+        ppmWidth = (int) width * resolutionMultiplier;
+        ppmHeight = (int) height * resolutionMultiplier;
+    }
+
+    ofstream image = createPPM(ppmWidth, ppmHeight);
+    array<uint8_t, 4> color;
+    int ppmPixelAmount = ppmWidth * ppmHeight;
+
+    if (isHighResExportActive) {
+        int* ppmIterationInfo;
+        cudaMallocManaged(&ppmIterationInfo, sizeof(int) * ppmPixelAmount);
+
+        grid = dim3((ppmWidth  + block.x - 1) / block.x, (ppmHeight + block.y - 1) / block.y);
+        double ppmZoomFactor = zoomFactor * resolutionMultiplier;
+        renderMandelbrotGPU_deepZoom<<<grid, block>>>(refOrbit, ppmIterationInfo, ppmWidth, ppmHeight, maxRefOrbitIterations, zoomBase, ppmZoomFactor);
+        cudaDeviceSynchronize();
+
+        for (size_t i = 0; i < ppmPixelAmount; i++)
+        {
+            color = (*cm).colorMandelbrot(colorMode, ppmIterationInfo[i], maxIterations);
+            image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
+        }
+
+        cudaFree(ppmIterationInfo);
+
+    } else {
+        for (size_t i = 0; i < ppmPixelAmount; i++)
+        {
+            color = (*cm).colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
+            image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
+        }
+    }
+
+    isBusy = false;
 }
