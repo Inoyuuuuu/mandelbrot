@@ -22,12 +22,19 @@ In my code, the gpu stores these calculated iteration values on shared memory so
 - Adjust window size using the commanline arguments (e.g. `./mandelbrot 900 700`)
 - "Esc" or close window to close program
 
-### How do I build and run this project? (tested with CUDA on Linux)
-- use [Cuda Toolkit](https://developer.nvidia.com/cuda/toolkit) (choose the version that fits your gpu)
-- clone this repo with `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`
-- open with visual studio code and choose your c++ compiler
-- type `cmake .` in the terminal and afterwards `make` to build the executable
-- type `./mandelbrot` to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
 
-A older version without CUDA (runs only on the CPU) is on [this branch](https://github.com/Inoyuuuuu/mandelbrot/tree/without-cuda).\
-The CPU version also runs on Windows when using mingw.
+#### How do I build and run this project? (tested on Windows 11 and Linux)
+You'll need c++ compiler, make and cmake (for windows MinGW installed over Msys2 or similar)
+1. clone this repo with\
+  `git clone --recurse-submodules https://github.com/Inoyuuuuu/mandelbrot.git`\
+  and navigate into the folder
+2. switch to this branch with\
+   `git checkout cpu-escape-time-algorithm`
+3. in the terminal type\
+  `cmake .` `cmake -G "MinGW Makefiles"`\
+  and afterwards\
+  `mingw32-make`\
+  to build the executable
+4. type\
+   `./mandelbrot`\
+   to execute the program (you can adjust the window size by typing x and y afterwards, e.g. `./mandelbrot 900 700`)
