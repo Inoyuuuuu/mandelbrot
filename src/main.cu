@@ -12,20 +12,16 @@ using namespace std;
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
 void drawToPPMImage(int ppmWidth, int ppmHeight);
 void initCudaGridSize();
-__global__ void renderMandelbrotGPU_deepZoom(double* refOrbit, int* iterationInfo, int windowWidth, int windowHeight, int maxRefOrbitIterations, int zoomBase, double zoomFactor);
-void calculateOrbit(double* refOrbit);
+__global__ void renderMandelbrotGPU(int* iterationInfo, int windowWidth, int windowHeight, 
+    int maxIterations, int zoomBase, double zoomFactor, double xOffset, double yOffset);
 void cudaRenderImage(SDL_Renderer* renderer);
 
 //mandelbrot
 int maxIterations = 1000;
 int zoomBase = 100;
 double zoomFactor = 1.0;
-long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
-long double yOffset = 0;
-
-//arbitrary precision
-double* refOrbit;
-int maxRefOrbitIterations = 0;
+double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
+double yOffset = 0;
 
 //window and program
 int width;
@@ -89,7 +85,6 @@ int main(int argc, char *argv[]) {
     pixelAmount = width * height;
 
     //cuda init
-    cudaMallocManaged(&refOrbit, sizeof(double) * 2 * (maxIterations + 1));
     cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
     initCudaGridSize();
 
@@ -205,7 +200,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    cudaFree(refOrbit);
     cudaFree(iterationInfo);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
@@ -222,94 +216,46 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    calculateOrbit(refOrbit);
-
     if (isHighResExportActive) initCudaGridSize();
 
-    renderMandelbrotGPU_deepZoom<<<grid, block>>>(refOrbit, iterationInfo, width, height, maxRefOrbitIterations, zoomBase, zoomFactor);
+    renderMandelbrotGPU<<<grid, block>>>(iterationInfo, width, height, maxIterations, zoomBase, zoomFactor, xOffset, yOffset);
     cudaDeviceSynchronize();
     
     drawToSDLWindow(renderer, pixelAmount);
     SDL_RenderPresent(renderer);
 }
 
-__global__ void renderMandelbrotGPU_deepZoom(double* refOrbit, int* iterationInfo, int windowWidth, int windowHeight, int maxRefOrbitIterations, int zoomBase, double zoomFactor) {
+__global__ void renderMandelbrotGPU(int* iterationInfo, int windowWidth, int windowHeight, 
+    int maxIterations, int zoomBase, double zoomFactor, double xOffset, double yOffset) {
 
     int x = blockDim.x * blockIdx.x + threadIdx.x;        
     int y = blockDim.y * blockIdx.y + threadIdx.y;
 
     if (x >= windowWidth || y >= windowHeight) return;
 
-    double d_cr = (x - windowWidth * 0.5) / (zoomBase * zoomFactor);
-    double d_ci = (y - windowHeight * 0.5) / (zoomBase * zoomFactor);
+    double cartesianX = (x - (windowWidth / 2));
+    double cartesianY = (y - (windowHeight / 2));
 
-    double d_zr = 0;
-    double d_zi = 0;
+    double cr = cartesianX / (zoomBase * zoomFactor) + xOffset;
+    double ci = cartesianY / (zoomBase * zoomFactor) + yOffset;
 
-    int iteration = 0;
-    int ref_iteration = 0;
-
-    while (iteration < maxRefOrbitIterations) {
-        
-        double ref_zr = refOrbit[ref_iteration * 2];
-        double ref_zi = refOrbit[ref_iteration * 2 + 1];
-
-        //dz = 2 * dz * x_orbit[ref_iteration] + dz * dz + dc;
-        double temp_zr = 2*(ref_zr*d_zr - ref_zi*d_zi) + (d_zr*d_zr - d_zi*d_zi) + d_cr;
-        d_zi = 2*(ref_zr*d_zi + ref_zi*d_zr) + (2*d_zr*d_zi) + d_ci;
-        d_zr = temp_zr;
-        ref_iteration++;
-
-        double zr = refOrbit[ref_iteration*2] + d_zr;
-        double zi = refOrbit[ref_iteration*2+1] + d_zi;
-
-        double z_squared = zr*zr + zi*zi;
-        double dz_squared = d_zr*d_zr + d_zi*d_zi;
-
-        if (z_squared > 4.0) break; // |z| > 2 == z² > 2²
-
-        if (z_squared < dz_squared || ref_iteration == maxRefOrbitIterations) {
-            
-            d_zr = zr;
-            d_zi = zi;
-            ref_iteration = 0;
-        }
-        iteration++;
-    }
-
-    iterationInfo[windowWidth * y + x] = iteration;
-
-}
-
-void calculateOrbit(double* refOrbit) {
-
-    for (size_t i = 0; i < maxIterations; i++)
-    {
-        refOrbit[i * 2] = 0;
-        refOrbit[i * 2 + 1] = 0;
-    }
-
-    long double cr = xOffset;
-    long double ci = yOffset;
-
-    long double zr = 0.0;
-    long double zi = 0.0;
+    double zr = 0.0;
+    double zi = 0.0;
 
     int iteration = 0;
 
-    while (iteration < maxIterations)
+    while ((zr * zr + zi * zi) < 4 && iteration < maxIterations)
     {
-        refOrbit[iteration * 2] = (double)zr;
-        refOrbit[iteration * 2 + 1] = (double)zi;
-
-        // z(n+1) = z(n)^2 + c
-        long double temp_zr = zr * zr - zi * zi + cr;
-        zi = 2 * zr * zi + ci;
+        //z = z^2 + c
+        double temp_zr = zr * zr - zi * zi;
+        zi = 2 * zr * zi;
         zr = temp_zr;
+        zr += cr;
+        zi += ci;
 
-        iteration++;
+        iteration++;            
     }
-    maxRefOrbitIterations = iteration;
+    iterationInfo[windowWidth * y + x] = iteration;
 }
 
 void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
@@ -372,7 +318,7 @@ void drawToPPMImage(int width, int height) {
 
         grid = dim3((ppmWidth  + block.x - 1) / block.x, (ppmHeight + block.y - 1) / block.y);
         double ppmZoomFactor = zoomFactor * resolutionMultiplier;
-        renderMandelbrotGPU_deepZoom<<<grid, block>>>(refOrbit, ppmIterationInfo, ppmWidth, ppmHeight, maxRefOrbitIterations, zoomBase, ppmZoomFactor);
+        renderMandelbrotGPU<<<grid, block>>>(ppmIterationInfo, ppmWidth, ppmHeight, maxIterations, zoomBase, ppmZoomFactor, xOffset, yOffset);
         cudaDeviceSynchronize();
 
         for (size_t i = 0; i < ppmPixelAmount; i++)
