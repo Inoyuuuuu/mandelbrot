@@ -5,6 +5,7 @@
 #include <array>
 #include <filesystem>
 #include <string>
+#include <cstdint>
 #include "ColorManager.cpp"
 
 using namespace std;
