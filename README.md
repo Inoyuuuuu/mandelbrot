@@ -15,12 +15,20 @@ My code utilizes an escape time algorithm which determines how quickly a given n
 In my code, the gpu stores these calculated iteration values on shared memory so the cpu can access them afterwards, apply the color and draw the pixels to the active window.
 
 ### Features
+##### Keybinds
 - Zoom in and out with mousescroll
 - "P" to print the current screen to an image (in ppm format)
 - "F" to flip the zoomfactor (effectively the image on x axis)
 - "R" to reset
-- Adjust window size using the commanline arguments (e.g. `./mandelbrot 900 700`)
+- "Arrow keys" to move horizontal/vertical
+- hold "LShift" for centered zoom
 - "Esc" or close window to close program
+##### Program Arguments
+- Adjust window width and height using the first 2 commanline arguments (e.g. `./mandelbrot 900 700`)
+- Change coloration with `--cm:` + int value (e.g. `./mandelbrot 900 700 --cm:3`)
+- Enable "debug mode" with `--db` (e.g. `./mandelbrot 900 700 --db`)
+- Change image export resolution with `--eRes:` + float value (e.g. `./mandelbrot 900 700 --eRes:3.0`)
+  - this scales the current view with given multiplier and renders a much larger image 
 
 ### How do I build and run this project? (tested with CUDA on Linux)
 - use [Cuda Toolkit](https://developer.nvidia.com/cuda/toolkit) (choose the version that fits your gpu)
