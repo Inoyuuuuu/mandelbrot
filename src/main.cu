@@ -139,8 +139,8 @@ int main(int argc, char *argv[]) {
 
             //vertical/horizontal movement via arrow keys
             if (isKeyDownEvent && !isBusy) {
-                long double x = 0;
-                long double y = 0;
+                double x = 0;
+                double y = 0;
 
                 switch(event.key.key) {
                     case SDLK_LEFT: x += -100; break;
@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
                 bool isPositiveZoom = (isMouseEvent && event.wheel.y > 0) || (isKeyDownEvent && event.key.key == SDLK_PLUS);
                 bool isNegativeZoom = (isMouseEvent && event.wheel.y < 0) || (isKeyDownEvent && event.key.key == SDLK_MINUS);
                 
-                long double mandel_x, mandel_y;
+                double mandel_x, mandel_y;
                 mandel_x = (x - width / 2);    //translate mouse x y to cartesian position in mandel coordinate system
                 mandel_y = (y - height / 2);
                 mandel_x /= (zoomBase * zoomFactor);
