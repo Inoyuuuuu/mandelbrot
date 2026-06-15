@@ -24,8 +24,6 @@ long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to
 long double yOffset = 0;
 
 //arbitrary precision
-double orbit_r;
-double orbit_i;
 double* refOrbit;
 int maxRefOrbitIterations = 0;
 
@@ -35,8 +33,8 @@ int height;
 size_t pixelAmount;
 bool isBusy = false;
 int* iterationInfo;
-bool isDebugMode = true;
-int colorMode = 3;
+bool isDebugMode = false; //TODO: deactivate
+int colorMode = 0;
 
 //cuda
 dim3 threads_per_block(32, 32);
@@ -48,8 +46,21 @@ int main(int argc, char *argv[]) {
     try
     {
         width = stoi(argv[1]);
-        height = stoi(argv[1]);
-        if (argc >= 3) height = stoi(argv[2]);
+        height = stoi(argv[2]);
+
+        if (argc > 3) {
+            for (size_t i = 3; i < argc; i++)
+            {
+                string arg = string(argv[i]);
+
+                if (arg.starts_with("--cm:")) {
+                    colorMode = stoi(arg.erase(0,5));
+                } else if (arg.starts_with("--db"))
+                {
+                    isDebugMode = true;
+                }
+            }
+        }
     }
     catch(const exception& e)
     {
