@@ -11,7 +11,7 @@ This project uses the [SDL3 library](https://www.libsdl.org/) as git submodule i
 ### About Mandelbrot And This Project 
 The mandelbrot set is calculated by exploring the complex series  <b>z<sub>n</sub> =  z<sub>n-1</sub><sup>2</sup> + c </b>  with different complex numbers.\
 A complex number can be represented by a point on the complex plane, using the x axis for the real part and the y axis for the imaginary part. Here this plane is being mapped to the SDL window, so each pixel can represent a point on there.\
-My algorithm is a simple escape time algorithm which determines how quickly a given number grows (if it grows at all). This is done by looking at which iteration the series exceeds a certain threshold. If color is applied to each point based on their iteration value, the mandelbrot appears.\
+My code utilizes an escape time algorithm which determines how quickly a given number grows (if it grows at all). This is done by looking at which iteration the series exceeds a certain threshold. If color is applied to each point based on their iteration value, the mandelbrot appears. The algorithm is based on pertubation theory to allow for faster renders and deeper zoom levels, proxessing one high-precision orbit on the cpu and based on that the rest of all pixels on the gpu (Note: I currently use "long double" as high precision, which the mvsc compiler treats as standard double, so I recommend using linux and another c compiler).\
 In my code, the gpu stores these calculated iteration values on shared memory so the cpu can access them afterwards, apply the color and draw the pixels to the active window.
 
 ### Features
