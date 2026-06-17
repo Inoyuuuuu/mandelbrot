@@ -6,12 +6,13 @@
 #include <filesystem>
 #include <string>
 #include <cstdint>
-#include "ColorManager.cpp"
+#include "ColorManager.h"
+#include "PPMtoPNGConverter.h"
 
 using namespace std;
 
-void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount);
-void drawToPPMImage(int ppmWidth, int ppmHeight);
+void drawToSDLWindow(SDL_Renderer* renderer);
+string drawToPPMImage(string outputPath);
 void initCudaGridSize();
 __global__ void renderMandelbrotGPU_deepZoom(double* refOrbit, int* iterationInfo, int windowWidth, int windowHeight, int maxRefOrbitIterations, int zoomBase, double zoomFactor);
 void calculateOrbit(double* refOrbit);
@@ -23,31 +24,39 @@ int zoomBase = 100;
 double zoomFactor = 1.0;
 long double xOffset = -0.42; //common mandelbrot renders start at range -2.00 to 0.42
 long double yOffset = 0;
+int* iterationInfo;
 
 //arbitrary precision
 double* refOrbit;
 int maxRefOrbitIterations = 0;
 
 //window and program
-int width;
-int height;
-size_t pixelAmount;
+int width = 300;
+int height = 300;
 bool isBusy = false;
-int* iterationInfo;
 
 //programm settings
 bool isDebugMode = false; //TODO: deactivate
 int colorMode = 0;
 bool isHighResExportActive = false;
 float resolutionMultiplier = 1.0;
+bool isConvertToPngEnabled = true;
 
 //cuda
 dim3 block(16, 16);
 dim3 grid(1, 1);
 
-ColorManager* cm = new ColorManager();
-
 int main(int argc, char *argv[]) {
+    //initial checks
+    int count;
+    cudaError_t err = cudaGetDeviceCount(&count);
+    if (err != cudaError::cudaSuccess) {
+        printf("Cuda Error: %s\n", cudaGetErrorString(err));
+        return -1;
+    }
+
+    cout << "starting mandelbrot program";
+    
     try
     {
         width = stoi(argv[1]);
@@ -67,7 +76,11 @@ int main(int argc, char *argv[]) {
                 {
                     resolutionMultiplier = stof(arg.erase(0,7));
                     isHighResExportActive = true;
+                } else if (arg.starts_with("--noPng"))
+                {
+                    isConvertToPngEnabled = false;
                 }
+                
             }
         }
     }
@@ -85,9 +98,9 @@ int main(int argc, char *argv[]) {
     if (!window) return -1;
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (!renderer) return -1;
-    pixelAmount = width * height;
-
-    //cuda init
+    
+    srand(time(NULL));
+    int pixelAmount = width * height;
     cudaMallocManaged(&refOrbit, sizeof(double) * 2 * (maxIterations + 1));
     cudaMallocManaged(&iterationInfo, sizeof(int) * pixelAmount);
     initCudaGridSize();
@@ -122,9 +135,21 @@ int main(int argc, char *argv[]) {
                     running = false;
 
                 } else if(event.key.key == SDLK_P && !isBusy) { //"screenshot"
-                    cout << "rendering screenshot [res: " << resolutionMultiplier << "]...\n";
-                    drawToPPMImage(width, height);
+                    cout << "rendering screenshot [res: x" << resolutionMultiplier << "]...\n";
+
+                    string imgPath = "renders/mandelbrot_render";
+                    string ppmPath = drawToPPMImage(imgPath);
+
                     cout << "done!\n";
+
+                    if (isConvertToPngEnabled)
+                    {
+                        cout << "converting ppm to png now...\n";
+                        string pngPath = imgPath + to_string(rand() % 1000)  + ".png";
+                        ppm_to_png(ppmPath, pngPath);
+
+                        cout << "done!\n";
+                    }
 
                 } else if (event.key.key == SDLK_F && !isBusy) {
                     zoomFactor = -zoomFactor;
@@ -138,6 +163,12 @@ int main(int argc, char *argv[]) {
 
                 } else if (event.key.key == SDLK_LSHIFT) {
                     shiftPressed = true;
+                } else if (event.key.key == SDLK_C) {
+                    colorMode++;
+                    if (colorMode >= getTotalColorModes()) {
+                        colorMode = 0;
+                    }
+                    cudaRenderImage(renderer);
                 }
             }
 
@@ -228,7 +259,7 @@ void cudaRenderImage(SDL_Renderer* renderer) {
     renderMandelbrotGPU_deepZoom<<<grid, block>>>(refOrbit, iterationInfo, width, height, maxRefOrbitIterations, zoomBase, zoomFactor);
     cudaDeviceSynchronize();
     
-    drawToSDLWindow(renderer, pixelAmount);
+    drawToSDLWindow(renderer);
     SDL_RenderPresent(renderer);
 }
 
@@ -311,11 +342,11 @@ void calculateOrbit(double* refOrbit) {
     maxRefOrbitIterations = iteration;
 }
 
-void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
+void drawToSDLWindow(SDL_Renderer* renderer) {
     isBusy = true;
     array<uint8_t, 4> color;
 
-    for (size_t i = 0; i < pixelAmount; i++)
+    for (size_t i = 0; i < width * height; i++)
     {
         int x = i % width;        
         int y = i / width;
@@ -324,7 +355,7 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
             SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
 
         } else {
-            color = (*cm).colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
+            color = colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
             SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2], color[3]);
         }
 
@@ -333,35 +364,31 @@ void drawToSDLWindow(SDL_Renderer* renderer, int pixelAmount) {
     isBusy = false;
 }
 
-std::ofstream createPPM(int width, int height) {
-    std::filesystem::create_directories("renders");
-    std::string outPath = "renders/mandelPic.ppm";
-    int counter = 2;
-
-    while (std::filesystem::exists(outPath)) {
-        outPath = "renders/mandelPic" + std::to_string(counter++) + ".ppm";
-    }
-
-    std::ofstream image(outPath);
-    if (!image.is_open()) {
-        throw std::runtime_error("Failed to open file: " + outPath);
-    }
-
-    image << "P3\n" << width << " " << height << "\n255\n";
-    return image;
-}
-
-void drawToPPMImage(int width, int height) {
+string drawToPPMImage(string outputPath) {
     int ppmWidth = width;
     int ppmHeight = height;
     isBusy = true;
 
     if (isHighResExportActive) {
-        ppmWidth = (int) width * resolutionMultiplier;
-        ppmHeight = (int) height * resolutionMultiplier;
+        ppmWidth = round(width * resolutionMultiplier);
+        ppmHeight = round(height * resolutionMultiplier);
     }
 
-    ofstream image = createPPM(ppmWidth, ppmHeight);
+    std::filesystem::create_directories("renders");
+    std::string outPath = outputPath + ".ppm";
+    int counter = 2;
+
+    while (std::filesystem::exists(outPath)) {
+        outPath = outputPath + std::to_string(counter++) + ".ppm";
+    }
+
+    std::ofstream image(outPath, std::ios::binary);    
+    if (!image.is_open()) {
+        throw std::runtime_error("Failed to open file: " + outPath);
+    }
+
+    image << "P6\n" << ppmWidth << " " << ppmHeight << "\n255\n";
+
     array<uint8_t, 4> color;
     int ppmPixelAmount = ppmWidth * ppmHeight;
 
@@ -376,19 +403,24 @@ void drawToPPMImage(int width, int height) {
 
         for (size_t i = 0; i < ppmPixelAmount; i++)
         {
-            color = (*cm).colorMandelbrot(colorMode, ppmIterationInfo[i], maxIterations);
-            image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
+            color = colorMandelbrot(colorMode, ppmIterationInfo[i], maxIterations);
+            image.put(color[0]);
+            image.put(color[1]);
+            image.put(color[2]);
         }
-
+        initCudaGridSize();
         cudaFree(ppmIterationInfo);
 
     } else {
         for (size_t i = 0; i < ppmPixelAmount; i++)
         {
-            color = (*cm).colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
-            image << (int)color[0] << " " << (int)color[1] << " " << (int)color[2] << "\n";
+            color = colorMandelbrot(colorMode, iterationInfo[i], maxIterations);
+            image.put(color[0]);
+            image.put(color[1]);
+            image.put(color[2]);
         }
     }
 
     isBusy = false;
+    return outPath;
 }
