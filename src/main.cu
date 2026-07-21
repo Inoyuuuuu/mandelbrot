@@ -126,35 +126,40 @@ int main(int argc, char *argv[]) {
             }
             
             if (isKeyDownEvent) {
-                if (event.key.key == SDLK_ESCAPE) {
+                if (event.key.key == SDLK_ESCAPE) { //ESC - terminate programm
                     running = false;
 
-                } else if(event.key.key == SDLK_P && !isBusy) { //"screenshot"
+                } else if(event.key.key == SDLK_P && !isBusy) { // P -"screenshot"
                     cout << "rendering screenshot [res: x" << resolutionMultiplier << "]...\n";
 
                     string imgPath = "renders/mandelbrot_render";
                     string ppmPath = drawToPPMImage(imgPath);
 
                     cout << "done!\n";
+                    continue;
 
-                } else if (event.key.key == SDLK_F && !isBusy) {
+                } else if (event.key.key == SDLK_F && !isBusy) { //F - flip
                     zoomFactor = -zoomFactor;
                     cudaRenderImage(renderer);
+                    continue;
 
-                } else if (event.key.key == SDLK_R && !isBusy) {
+                } else if (event.key.key == SDLK_R && !isBusy) { //R - reset
                     xOffset = -0.42;
                     yOffset = 0.0;
                     zoomFactor = 1.0;
                     cudaRenderImage(renderer);
+                    continue;
 
-                } else if (event.key.key == SDLK_LSHIFT) {
+                } else if (event.key.key == SDLK_LSHIFT) { //SHIFT (hold) - zoom towards middle (instead of cursor position)
                     shiftPressed = true;
-                } else if (event.key.key == SDLK_C) {
+                } else if (event.key.key == SDLK_C) { //C - change color mode
                     colorMode++;
                     if (colorMode >= getTotalColorModes()) {
                         colorMode = 0;
                     }
+                    cout << "Changed color mode to: " << getColorModeName(colorMode) << "\n";
                     cudaRenderImage(renderer);
+                    continue;
                 }
             }
 
@@ -166,9 +171,9 @@ int main(int argc, char *argv[]) {
                 switch(event.key.key) {
                     case SDLK_LEFT: x += -100; break;
                     case SDLK_RIGHT: x += 100; break;
-                    case SDLK_UP: y += -100; break; //winow y is top down
+                    case SDLK_UP: y += -100; break; //window: y is top down
                     case SDLK_DOWN: y += 100; break;
-                    default: continue;
+                    default: break;
                 }
 
                 x /= (zoomBase * zoomFactor);
@@ -177,7 +182,7 @@ int main(int argc, char *argv[]) {
                 yOffset += y;
 
                 cudaRenderImage(renderer);
-                cout << "zoom: " << zoomFactor << " | x: " << xOffset << " | y: " << yOffset << "\n";
+                continue;
             }
 
             if (isKeyUpEvent) {

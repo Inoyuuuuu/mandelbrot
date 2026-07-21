@@ -4,15 +4,17 @@
 #include <math.h>
 #include <iostream>
 #include <cstdint>
+#include <string>
 
 #include "ColorManager.h"
 
 using namespace std;
 
-int totalColorModes = 4;
+int totalColorModes = 5;
 
 array<uint8_t, 4> calcPixelColorLCH(int iteration, int maxIterations);
 array<uint8_t, 4> calcPixelColor_rainbow(int iteration, int maxIterations);
+array<uint8_t, 4> calcPixelColorInterpolation_rainbow(int iteration, int maxIterations);
 array<uint8_t, 4> calcPixelColor_bw(int iteration, int maxIterations);
 array<uint8_t, 4> calcPixelColorInterpolation_bw(int iteration, int maxIterations);
 
@@ -21,9 +23,21 @@ array<uint8_t, 4> colorMandelbrot(int colorMode, int iteration, int maxIteration
     switch (colorMode) {
         case 0: return calcPixelColorLCH(iteration, maxIterations);
         case 1: return calcPixelColor_rainbow(iteration, maxIterations);
-        case 2: return calcPixelColor_bw(iteration, maxIterations);
-        case 3: return calcPixelColorInterpolation_bw(iteration, maxIterations);
+        case 2: return calcPixelColorInterpolation_rainbow(iteration, maxIterations);
+        case 3: return calcPixelColor_bw(iteration, maxIterations);
+        case 4: return calcPixelColorInterpolation_bw(iteration, maxIterations);
         default: return calcPixelColorLCH(iteration, maxIterations);
+    }
+}
+
+string getColorModeName(int colorMode) {
+    switch (colorMode) {
+        case 0: return "LCH (cyclic)";
+        case 1: return "Rainbow (fixed steps)";
+        case 2: return "Rainbow (linear interpolation)";
+        case 3: return "Black and White (fixed steps)";
+        case 4: return "Black and White (linear interpolation)";
+        default: return "LCH (cyclic)";
     }
 }
 
@@ -169,6 +183,44 @@ array<uint8_t, 4> calcPixelColor_rainbow(int iteration, int maxIterations) {
         case 31: setColorValues(color, 0, 255, 255, 255); return color;
         default: setColorValues(color, 0, 0, 0, 255); return color;
     }
+}
+
+array<uint8_t, 4> calcPixelColorInterpolation_rainbow(int iteration, int maxIterations) {
+    array<uint8_t, 4> color = {0, 0, 0, 255};
+
+    if (iteration == maxIterations) return color;
+
+    // Normalize iteration to 0-1 range using global maxIterations
+    float t = (float)iteration / (float)maxIterations;
+
+    // Define gradient keypoints
+    float keypoints[] = {0.0000, 0.0323, 0.0645, 0.0968, 0.1290, 0.1613, 0.1935, 0.2258, 0.2581, 0.2903, 0.3226, 0.3548, 0.3871, 0.4194, 0.4516, 0.4839, 0.5161, 0.5484, 0.5806, 0.6129, 0.6452, 0.6774, 0.7097, 0.7419, 0.7742, 0.8065, 0.8387, 0.8710, 0.9032, 0.9355, 0.9677, 1.0000};
+
+    int colorR[] = {255, 214, 173, 132, 90, 49, 8, 0, 0, 0, 0, 0, 0, 25, 66, 107, 148, 189, 230, 255, 255, 255, 255, 255, 255, 247, 206, 165, 123, 82, 41, 0};
+    int colorG[] = {0, 0, 0, 0, 0, 0, 0, 33, 74, 115, 156, 197, 239, 255, 255, 255, 255, 255, 255, 239, 197, 156, 115, 74, 33, 8, 49, 90, 132, 173, 214, 255};
+    int colorB[] = {0, 41, 82, 123, 165, 206, 247, 222, 181, 140, 99, 58, 16, 0, 0, 0, 0, 0, 0, 16, 58, 99, 140, 181, 222, 255, 255, 255, 255, 255, 255, 255};
+
+    // Find the segment
+    int segment = 0;
+    for (int i = 0; i < 31; i++) {
+        if (t >= keypoints[i] && t <= keypoints[i + 1]) {
+            segment = i;
+            break;
+        }
+    }
+
+    // Interpolate within segment
+    float segmentStart = keypoints[segment];
+    float segmentEnd = keypoints[segment + 1];
+    float localT = (t - segmentStart) / (segmentEnd - segmentStart);
+
+    // Linear interpolation
+    int r = (int)(colorR[segment] + (colorR[segment + 1] - colorR[segment]) * localT);
+    int g = (int)(colorG[segment] + (colorG[segment + 1] - colorG[segment]) * localT);
+    int b = (int)(colorB[segment] + (colorB[segment + 1] - colorB[segment]) * localT);
+
+    setColorValues(color, r, g, b, 255);
+    return color;
 }
 
 array<uint8_t, 4> calcPixelColor_bw(int iteration, int maxIterations) {
