@@ -7,7 +7,6 @@
 #include <string>
 #include <cstdint>
 #include "ColorManager.h"
-#include "PPMtoPNGConverter.h"
 
 using namespace std;
 
@@ -76,11 +75,7 @@ int main(int argc, char *argv[]) {
                 {
                     resolutionMultiplier = stof(arg.erase(0,7));
                     isHighResExportActive = true;
-                } else if (arg.starts_with("--noPng"))
-                {
-                    isConvertToPngEnabled = false;
                 }
-                
             }
         }
     }
@@ -141,15 +136,6 @@ int main(int argc, char *argv[]) {
                     string ppmPath = drawToPPMImage(imgPath);
 
                     cout << "done!\n";
-
-                    if (isConvertToPngEnabled)
-                    {
-                        cout << "converting ppm to png now...\n";
-                        string pngPath = imgPath + to_string(rand() % 1000)  + ".png";
-                        ppm_to_png(ppmPath, pngPath);
-
-                        cout << "done!\n";
-                    }
 
                 } else if (event.key.key == SDLK_F && !isBusy) {
                     zoomFactor = -zoomFactor;
