@@ -3,7 +3,7 @@
 A Mandelbrot set visualization written in C/C++ and CUDA, using GPU parallelization to enable fast, deep-zoom renders. The project uses the [SDL3 library](https://www.libsdl.org/) (included as a git submodule) to display the render live in a window.
 
 <div id="imgs">
-  <img src="example_renders\mandel.png" width="30%">
+  <img src="example_renders\mandel6.png" width="30%">
   <img src="example_renders\mandel4.png" width="30%">
   <img src="example_renders\mandel5.png" width="30%">
 </div>
@@ -40,9 +40,9 @@ The GPU writes the computed iteration counts into CUDA managed memory, which the
 
 ### Program Arguments
 - First two arguments set the window width and height: `./mandelbrot 900 700`
-- `--cm:<int>` — set the color mode the program starts with, e.g. `./mandelbrot 900 700 --cm:3`
-- `--db` — enable debug mode (marks the center pixel), e.g. `./mandelbrot 900 700 --db`
-- `--eRes:<float>` — set the export resolution multiplier, e.g. `./mandelbrot 900 700 --eRes:3.0`
+- `--cm:<int>` - set the color mode the program starts with, e.g. `./mandelbrot 900 700 --cm:3`
+- `--db` - enable debug mode (marks the center pixel), e.g. `./mandelbrot 900 700 --db`
+- `--eRes:<float>` - set the export resolution multiplier, e.g. `./mandelbrot 900 700 --eRes:3.0`
   - Renders the current view at a much higher resolution when exporting with `P`, without changing the live window resolution.
 
 If arguments are missing or invalid, the program falls back to a default 300x300 window.
